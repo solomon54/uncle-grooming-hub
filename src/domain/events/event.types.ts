@@ -1,0 +1,23 @@
+//src/domain/events/event.types.ts
+
+export const ECS_EVENTS = {
+  CUSTOMER_CHECKED_IN: "01",
+  BARBER_AVAILABLE: "02",
+  CUSTOMER_CALLED_TO_CHAIR: "03",
+  SERVICE_ENGAGED: "04",
+  SERVICE_COMPLETED: "05",
+  PAYMENT_INTENT_CREATED: "06",
+  PAYMENT_SETTLED: "08",
+  ADJUSTMENT_EVENT: "09",
+
+  // system / extended
+  RESERVATION_CREATED: "19",
+  RESERVATION_CANCELLED: "20",
+  INTENT_ADDED: "21",
+  INTENT_REMOVED: "22",
+  SCHEDULE_UPDATED: "23",
+  SHOP_HOURS_UPDATED: "24",
+  RESERVATION_EXPIRED: "25",
+} as const;
+
+export type EventType = (typeof ECS_EVENTS)[keyof typeof ECS_EVENTS];
