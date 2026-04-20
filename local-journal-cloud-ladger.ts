@@ -18,7 +18,7 @@
  * - Pure HLC-based deterministic convergence
  */
 
-import { ECS_EVENTS, EventType } from "@/domain/events/event.types";
+import { EventType } from "@/domain/events/event.types";
 
 // ===================================================================
 // 1. TYPE DEFINITIONS - CONSTRAINTS
@@ -51,8 +51,33 @@ export type AggregateType =
   | "TerminalSession"
   | "SystemProcess";
 
-// Constant for event type enum (used in schemas)
-const EVENT_TYPE_ENUM = Object.values(ECS_EVENTS) as readonly EventType[];
+// Constant for event type enum (used in schemas) - from ECS v1.3 full names
+const EVENT_TYPE_ENUM: readonly EventType[] = [
+  "CUSTOMER_CHECKED_IN",
+  "BARBER_AVAILABLE",
+  "CUSTOMER_CALLED_TO_CHAIR",
+  "SERVICE_ENGAGED",
+  "SERVICE_COMPLETED",
+  "PAYMENT_INTENT_CREATED",
+  "PAYMENT_PROCESSING",
+  "PAYMENT_SETTLED",
+  "ADJUSTMENT_EVENT",
+  "ACCOUNT_VERIFIED",
+  "QUEUE_TRANSFER_CONSENTED",
+  "APPOINTMENT_RESERVED",
+  "RESERVATION_CANCELLED",
+  "SERVICE_INTENT_ADDED",
+  "SERVICE_INTENT_REMOVED",
+  "BARBER_SCHEDULE_UPDATED",
+  "SHOP_HOURS_CHANGED",
+  "OPERATOR_SESSION_OPENED",
+  "OPERATOR_SESSION_CLOSED",
+  "SYNC_BATCH_ACKNOWLEDGED",
+  "RECONCILIATION_ANOMALY_DETECTED",
+  "LOCAL_SNAPSHOT_COMMITTED",
+  "TERMINAL_RECOVERY_COMPLETED",
+  "RESERVATION_EXPIRED",
+];
 
 // ===================================================================
 // 3. LOCAL JOURNAL SCHEMAS (RxDB - Offline-First Authority)
@@ -71,7 +96,7 @@ export interface LocalJournalSchemas {
         aggregate_version: { type: "number"; minimum: 1 };
         event_type: {
           type: "string";
-          enum: readonly EventType[]; // From ECS v1.3 (01-25)
+          enum: readonly EventType[]; // From ECS v1.3 full names
         };
         payload: { type: "object" };
         metadata: {

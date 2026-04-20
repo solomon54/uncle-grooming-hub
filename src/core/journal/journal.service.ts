@@ -1,111 +1,171 @@
-//src/core/journal/journal.service.ts
+// src/core/journal/journal.service.ts
 
+import { RxDatabase, RxCollection } from "rxdb";
+import { AllEvents } from "@/domain/events/event.definitions";
 import { BaseEvent } from "./event.types";
 
 /**
  * Journal Service
  * ----------------------------------------
- * مسؤول عن:
- * - Append-only event storage
- * - Optimistic concurrency control
- * - Idempotency enforcement
+ * Core service for the Local Journal as defined in TAS v1.0 §2–3 and §7.
  *
- * NOTE:
- * This is an in-memory implementation (Phase 1)
- * Replace storage adapter later with RxDB
+ * Responsibilities:
+ * - Append-only event storage with strict validation
+ * - Optimistic concurrency control via aggregate_version
+ * - Idempotency via event_id
+ * - HLC-based deterministic ordering
+ * - Integration with RxDB for offline-first persistence
  */
 
+type JournalDoc = {
+  event_id: string;
+  aggregate_id: string;
+  aggregate_version: number;
+  event_type: string;
+  payload: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  hlc: string;
+};
 export class JournalService {
+  private collection: RxCollection<JournalDoc> | null = null;
   /**
-   * Internal event store (ordered by HLC)
+   * Initialize the journal with the RxDB instance from local-journal-cloud-ledger.ts
    */
-  private events: BaseEvent[] = [];
-
-  /**
-   * Fast lookup: aggregate_id -> last known version
-   */
-  private aggregateVersionMap: Map<string, number> = new Map();
+  public setDatabase(db: RxDatabase): void {
+    this.collection = db.collections.journal;
+  }
 
   /**
-   * Idempotency guard (event_id uniqueness)
+   * Append a validated event to the local journal (append-only)
+   * Enforces TAS §2.1 (append-only), §2.3 (version check), and §2 (idempotency)
    */
-  private eventIdSet: Set<string> = new Set();
-
-  // --------------------------------------------------
-  // APPEND EVENT
-  // --------------------------------------------------
-  async appendEvent(event: BaseEvent): Promise<void> {
-    // 1. Idempotency check
-    if (this.eventIdSet.has(event.event_id)) {
-      // Silent success (idempotent behavior)
-      return;
-    }
-
-    // 2. Optimistic Concurrency Control
-    const currentVersion =
-      this.aggregateVersionMap.get(event.aggregate_id) || 0;
-
-    if (event.aggregate_version !== currentVersion + 1) {
+  public async appendEvent<T extends AllEvents>(event: T): Promise<void> {
+    if (!this.collection) {
       throw new Error(
-        `VERSION_CONFLICT: aggregate ${event.aggregate_id} expected version ${
-          currentVersion + 1
-        }, received ${event.aggregate_version}`
+        "JournalService: RxDB collection not initialized. Call setDatabase first."
       );
     }
 
-    // 3. Append (append-only invariant)
-    this.events.push(event);
+    // 1. Idempotency Guard
+    const existing = await this.collection
+      .findOne({ selector: { event_id: event.event_id } })
+      .exec();
+    if (existing) {
+      return; // Idempotent success
+    }
 
-    // 4. Update indexes
-    this.aggregateVersionMap.set(event.aggregate_id, event.aggregate_version);
+    // 2. Optimistic Concurrency Control
+    const latest = await this.collection
+      .findOne({
+        selector: { aggregate_id: event.aggregate_id },
+        sort: [{ aggregate_version: "desc" }],
+      })
+      .exec();
 
-    this.eventIdSet.add(event.event_id);
+    const currentVersion = latest ? latest.aggregate_version : 0;
 
-    // 5. Sort by HLC (safety for out-of-order inserts)
-    this.events.sort((a, b) =>
-      a.metadata.hlc_timestamp.localeCompare(b.metadata.hlc_timestamp)
+    if (event.aggregate_version !== currentVersion + 1) {
+      throw new Error(
+        `Concurrency Conflict: Aggregate ${
+          event.aggregate_id
+        } expected version ${currentVersion + 1}, got ${
+          event.aggregate_version
+        }`
+      );
+    }
+
+    // 3. Append to journal (immutable - append-only invariant)
+    await this.collection.insert({
+      event_id: event.event_id, // Primary key per schema
+      aggregate_id: event.aggregate_id,
+      aggregate_version: event.aggregate_version,
+      event_type: event.event_type,
+      payload: event.payload,
+      metadata: event.metadata,
+      hlc: event.metadata.hlc_timestamp, // For indexing and sorting
+    });
+  }
+
+  /**
+   * Replay all events for a specific aggregate (state reconstitution)
+   * Used by Projection Engine (TAS §3)
+   */
+  public async replay(aggregateId: string): Promise<AllEvents[]> {
+    if (!this.collection) return [];
+
+    const docs = await this.collection
+      .find({
+        selector: { aggregate_id: aggregateId },
+        sort: [{ hlc: "asc" }],
+      })
+      .exec();
+
+    return docs.map(
+      (doc) =>
+        ({
+          event_id: doc.event_id,
+          aggregate_id: doc.aggregate_id,
+          aggregate_version: doc.aggregate_version,
+          event_type: doc.event_type,
+          payload: doc.payload,
+          metadata: doc.metadata,
+        } as AllEvents)
     );
   }
 
-  // --------------------------------------------------
-  // READ EVENTS BY AGGREGATE
-  // --------------------------------------------------
-  async getEventsByAggregate(aggregate_id: string): Promise<BaseEvent[]> {
-    return this.events.filter((e) => e.aggregate_id === aggregate_id);
+  /**
+   * Reconstitute aggregate state using a reducer (pure function)
+   */
+  public async reconstitute<T>(
+    aggregateId: string,
+    reducer: (state: T, event: AllEvents) => T,
+    initialState: T
+  ): Promise<T> {
+    const events = await this.replay(aggregateId);
+    return events.reduce(reducer, initialState);
   }
 
-  // --------------------------------------------------
-  // GET ALL EVENTS (FOR PROJECTION ENGINE)
-  // --------------------------------------------------
-  async getAllEvents(): Promise<BaseEvent[]> {
-    return [...this.events];
+  /**
+   * Get events after a specific HLC (for sync / incremental updates)
+   */
+  public async getEventsAfter(
+    hlcTimestamp: string,
+    limit = 100
+  ): Promise<AllEvents[]> {
+    if (!this.collection) return [];
+
+    const docs = await this.collection
+      .find({
+        selector: { hlc: { $gt: hlcTimestamp } },
+        sort: [{ hlc: "asc" }],
+        limit,
+      })
+      .exec();
+
+    return docs.map(
+      (doc) =>
+        ({
+          event_id: doc.event_id,
+          aggregate_id: doc.aggregate_id,
+          aggregate_version: doc.aggregate_version,
+          event_type: doc.event_type,
+          payload: doc.payload,
+          metadata: doc.metadata,
+        } as AllEvents)
+    );
   }
 
-  // --------------------------------------------------
-  // GET EVENTS AFTER HLC (FOR SYNC / INCREMENTAL PROJECTION)
-  // --------------------------------------------------
-  async getEventsAfter(hlc_timestamp: string): Promise<BaseEvent[]> {
-    return this.events.filter((e) => e.metadata.hlc_timestamp > hlc_timestamp);
-  }
-
-  // --------------------------------------------------
-  // GET CURRENT AGGREGATE VERSION
-  // --------------------------------------------------
-  getAggregateVersion(aggregate_id: string): number {
-    return this.aggregateVersionMap.get(aggregate_id) || 0;
-  }
-
-  // --------------------------------------------------
-  // CLEAR (ONLY FOR TESTING / RESET)
-  // --------------------------------------------------
-  clear(): void {
-    this.events = [];
-    this.aggregateVersionMap.clear();
-    this.eventIdSet.clear();
+  /**
+   * Clear journal (only for testing / development)
+   */
+  public async clear(): Promise<void> {
+    if (this.collection) {
+      await this.collection.find().remove();
+    }
   }
 }
 
 /**
- * Singleton Instance (App-wide Journal)
+ * Singleton instance (used app-wide)
  */
-export const journal = new JournalService();
+export const journalService = new JournalService();
