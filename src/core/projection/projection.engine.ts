@@ -1,13 +1,14 @@
-//src/core/projection/projection.engine.ts
+// src/core/projection/projection.engine.ts
 
-import { BaseEvent } from "@/core/journal/event.types";
+import { AllEvents } from "@/domain/events/event.definitions";
 
 /**
- * Projection Handler Type
- * ----------------------------------------
- * Each projection registers a handler per event type
+ * Projection Handler
  */
-type ProjectionHandler<TState> = (state: TState, event: BaseEvent) => TState;
+export type ProjectionHandler<TState> = (
+  state: TState,
+  event: AllEvents
+) => TState;
 
 /**
  * Projection Definition
@@ -15,118 +16,130 @@ type ProjectionHandler<TState> = (state: TState, event: BaseEvent) => TState;
 export interface Projection<TState> {
   name: string;
   initialState: TState;
-  handlers: Record<string, ProjectionHandler<TState>>;
+  handlers: Partial<Record<string, ProjectionHandler<TState>>>;
+}
+
+/**
+ * Internal Projection Instance
+ */
+interface ProjectionInstance<TState> {
+  projection: Projection<TState>;
+  state: TState;
 }
 
 /**
  * Projection Engine
- * ----------------------------------------
- * Responsible for:
- * - Applying events to projections
- * - Maintaining materialized views
- * - Full replay (rebuild)
- * - Incremental updates
+ *
+ * NOTE:
+ * This layer is a type boundary.
+ * We use `unknown` internally but NEVER leak it outside.
  */
 export class ProjectionEngine {
-  /**
-   * Registered projections
-   */
-  private projections: Map<string, Projection<unknown>> = new Map();
-
-  /**
-   * Current materialized state
-   */
-  private state: Map<string, unknown> = new Map();
-
-  /**
-   * Last processed HLC (for incremental updates)
-   */
+  private projections = new Map<string, ProjectionInstance<unknown>>();
   private lastHLC: string | null = null;
 
   // --------------------------------------------------
-  // REGISTER PROJECTION
+  // REGISTRATION
   // --------------------------------------------------
-  register<TState>(projection: Projection<TState>) {
-    this.projections.set(projection.name, projection as Projection<unknown>);
-    this.state.set(projection.name, projection.initialState);
+
+  register<TState>(projection: Projection<TState>): void {
+    const instance: ProjectionInstance<TState> = {
+      projection,
+      state: projection.initialState,
+    };
+
+    // SAFE boundary cast (contained inside engine only)
+    this.projections.set(
+      projection.name,
+      instance as unknown as ProjectionInstance<unknown>
+    );
+  }
+
+  async registerCoreProjections(): Promise<void> {
+    const { queueBoardProjection } = await import(
+      "@/core/projection/queue-board.projection"
+    );
+
+    this.register(queueBoardProjection);
   }
 
   // --------------------------------------------------
-  // APPLY SINGLE EVENT (INCREMENTAL)
+  // EVENT APPLICATION
   // --------------------------------------------------
-  apply(event: BaseEvent) {
-    this.projections.forEach((projection, name) => {
-      const handler = projection.handlers[event.event_type];
 
-      if (!handler) return; // projection ignores this event
+  apply(event: AllEvents): void {
+    for (const instance of this.projections.values()) {
+      this.applyToInstance(instance, event);
+    }
 
-      const currentState = this.state.get(name) as unknown; // Temporary cast for handler call (safe because we control registration)
-
-      const newState = handler(currentState, event);
-
-      this.state.set(name, newState);
-    });
-
-    this.lastHLC = event.metadata.hlc_timestamp;
+    // Monotonic HLC guarantee
+    const incoming = event.metadata.hlc_timestamp;
+    if (!this.lastHLC || incoming > this.lastHLC) {
+      this.lastHLC = incoming;
+    }
   }
 
-  // --------------------------------------------------
-  // FULL REBUILD (REPLAY)
-  // --------------------------------------------------
-  rebuild(events: BaseEvent[]) {
-    // 1. Reset all projections to initial state
-    this.projections.forEach((projection, name) => {
-      this.state.set(name, projection.initialState);
-    });
+  private applyToInstance(
+    instance: ProjectionInstance<unknown>,
+    event: AllEvents
+  ): void {
+    const handler = instance.projection.handlers[event.event_type];
 
-    // 2. Sort by HLC (guarantee total ordering per TAS §2.2)
+    if (!handler) return;
+
+    /**
+     * SAFE CAST:
+     * We KNOW handler and state match because they were registered together.
+     */
+    const typedHandler = handler as ProjectionHandler<unknown>;
+
+    instance.state = typedHandler(instance.state, event);
+  }
+
+  applyBatch(events: AllEvents[]): void {
     const sorted = [...events].sort((a, b) =>
       a.metadata.hlc_timestamp.localeCompare(b.metadata.hlc_timestamp)
     );
 
-    // 3. Replay all events in order
     for (const event of sorted) {
       this.apply(event);
     }
   }
 
   // --------------------------------------------------
-  // APPLY MANY EVENTS (SYNC / BATCH)
+  // REBUILD
   // --------------------------------------------------
-  applyBatch(events: BaseEvent[]) {
-    const sorted = [...events].sort((a, b) =>
-      a.metadata.hlc_timestamp.localeCompare(b.metadata.hlc_timestamp)
-    );
 
-    for (const event of sorted) {
-      this.apply(event);
+  rebuild(events: AllEvents[]): void {
+    for (const instance of this.projections.values()) {
+      instance.state = instance.projection.initialState;
     }
+
+    this.applyBatch(events);
   }
 
   // --------------------------------------------------
-  // GET PROJECTION STATE
+  // ACCESSORS
   // --------------------------------------------------
-  getState<TState>(projectionName: string): TState | undefined {
-    return this.state.get(projectionName) as TState | undefined;
+
+  getState<TState>(name: string): TState | undefined {
+    const instance = this.projections.get(name);
+    return instance ? (instance.state as TState) : undefined;
   }
 
-  // --------------------------------------------------
-  // GET LAST HLC
-  // --------------------------------------------------
   getLastHLC(): string | null {
     return this.lastHLC;
   }
 
-  // --------------------------------------------------
-  // CLEAR (TESTING / RESET)
-  // --------------------------------------------------
-  clear() {
-    this.state.clear();
+  clear(): void {
+    for (const instance of this.projections.values()) {
+      instance.state = instance.projection.initialState;
+    }
     this.lastHLC = null;
   }
 }
 
 /**
- * Singleton Engine Instance
+ * Singleton
  */
 export const projectionEngine = new ProjectionEngine();

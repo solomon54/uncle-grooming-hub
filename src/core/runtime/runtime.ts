@@ -1,66 +1,116 @@
-//src/core/runtime/runtime.ts
+// src/core/runtime/runtime.ts
 
-import { journal } from "@/core/journal/journal.service";
+import type { RxDatabase } from "rxdb";
+import { journalService } from "@/core/journal/journal.service";
 import { projectionEngine } from "@/core/projection/projection.engine";
-import { BaseEvent } from "@/core/journal/event.types";
-import { v4 as uuidv4 } from "uuid";
+import { AllEvents } from "@/domain/events/event.definitions";
+import type { QueueBoardState } from "@/core/projection/queue-board.projection";
 
 /**
- * Runtime
- * ----------------------------------------
- * مسؤول عن:
- * - Event creation
- * - Writing to journal
- * - Triggering projections
+ * Runtime Orchestrator
  *
- * This is the ONLY write entry point in the system
+ * Central execution layer of the system.
+ *
+ * Guarantees:
+ * - Single write entry point
+ * - Strict append-only event flow
+ * - Deterministic projection updates
  */
 export class Runtime {
+  private initialized = false;
+
+  // --------------------------------------------------
+  // INIT
+  // --------------------------------------------------
+
   /**
-   * Emit Event (MAIN ENTRY POINT)
+   * Initialize runtime (MUST be called once)
    */
-  async emitEvent(input: Omit<BaseEvent, "event_id">): Promise<BaseEvent> {
-    const event: BaseEvent = {
-      ...input,
-      event_id: uuidv4(),
-    };
+  async init(db: RxDatabase): Promise<void> {
+    if (this.initialized) return;
 
-    // 1. Write to journal (source of truth)
-    await journal.appendEvent(event);
+    journalService.setDatabase(db);
 
-    // 2. Apply to projections (instant feedback)
+    // IMPORTANT: must await (prevents race condition)
+    await projectionEngine.registerCoreProjections();
+
+    this.initialized = true;
+  }
+
+  /**
+   * Internal safety guard
+   */
+  private ensureInitialized(): void {
+    if (!this.initialized) {
+      throw new Error("Runtime not initialized. Call runtime.init() first.");
+    }
+  }
+
+  // --------------------------------------------------
+  // WRITE PATH
+  // --------------------------------------------------
+
+  /**
+   * Emit a domain event
+   *
+   * Flow:
+   * 1. Persist → Journal
+   * 2. Apply → Projections
+   */
+  async emit(event: AllEvents): Promise<QueueBoardState | undefined> {
+    this.ensureInitialized();
+
+    // 1. Source of truth
+    await journalService.appendEvent(event);
+
+    // 2. Update read models
     projectionEngine.apply(event);
 
-    return event;
+    return projectionEngine.getState<QueueBoardState>("QUEUE_BOARD_VIEW");
   }
 
   // --------------------------------------------------
-  // LOAD SYSTEM (BOOTSTRAP)
+  // BOOTSTRAP
   // --------------------------------------------------
-  async bootstrap() {
-    const events = await journal.getAllEvents();
+
+  /**
+   * Full replay from beginning of time
+   */
+  async replayFromStart(): Promise<QueueBoardState | undefined> {
+    this.ensureInitialized();
+
+    const events = await journalService.getEventsAfter("0");
 
     projectionEngine.rebuild(events);
+
+    return projectionEngine.getState<QueueBoardState>("QUEUE_BOARD_VIEW");
   }
 
   // --------------------------------------------------
-  // SYNC NEW EVENTS (INCREMENTAL)
+  // SYNC
   // --------------------------------------------------
-  async sync() {
+
+  /**
+   * Incremental sync using HLC cursor
+   */
+  async syncNewEvents(): Promise<QueueBoardState | undefined> {
+    this.ensureInitialized();
+
     const lastHLC = projectionEngine.getLastHLC();
 
     if (!lastHLC) {
-      await this.bootstrap();
-      return;
+      return this.replayFromStart();
     }
 
-    const newEvents = await journal.getEventsAfter(lastHLC);
+    const newEvents = await journalService.getEventsAfter(lastHLC);
 
     projectionEngine.applyBatch(newEvents);
+
+    return projectionEngine.getState<QueueBoardState>("QUEUE_BOARD_VIEW");
   }
 }
 
 /**
- * Singleton Runtime
+ * Singleton
  */
 export const runtime = new Runtime();
