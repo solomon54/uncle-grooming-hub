@@ -1,0 +1,115 @@
+/*
+ * globals.css
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Uncle Grooming Hub — Cinema Dark Design System
+ * Tailwind v4 CSS-first configuration.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+@import "tailwindcss";
+
+@theme {
+  /* ── Typography ─────────────────────────────────────────────────────────── */
+  --font-family-sans: "Inter", "SF Pro Display", system-ui, sans-serif;
+  --font-family-mono: "JetBrains Mono", "Fira Code", monospace;
+
+  /* ── Cinema Dark Background Scale ───────────────────────────────────────── */
+  --color-surface-void: #0f1317;
+  --color-surface-base: #171d22;
+  --color-surface-raised: #1e262d;
+  --color-surface-overlay: #252f38;
+  --color-surface-border: #2d3840;
+  --color-surface-muted: #3a4650;
+
+  /* ── Gold Accent Scale ───────────────────────────────────────────────────── */
+  --color-gold-dim: #6b6404;
+  --color-gold-muted: #c9973a;
+  --color-gold-base: #e2d609;
+  --color-gold-bright: #ede84a;
+  --color-gold-glow: #f5f080;
+
+  /* ── Text Scale ──────────────────────────────────────────────────────────── */
+  --color-text-primary: #f5f5f5;
+  --color-text-secondary: #a3a3a3;
+  --color-text-tertiary: #6b6b6b;
+  --color-text-disabled: #404040;
+  --color-text-inverse: #0f1317;
+
+  /* ── Queue Status Colors ─────────────────────────────────────────────────── */
+  --color-status-waiting: #3b82f6;
+  --color-status-reserved: #8b5cf6;
+  --color-status-called: #f59e0b;
+  --color-status-in-service: #10b981;
+  --color-status-completed: #6b7280;
+  --color-status-expired: #ef4444;
+
+  /* ── Sync State Colors ───────────────────────────────────────────────────── */
+  --color-sync-local: #f59e0b;
+  --color-sync-transmit: #3b82f6;
+  --color-sync-verified: #10b981;
+  --color-sync-error: #ef4444;
+
+  /* ── Custom Shadows ──────────────────────────────────────────────────────── */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-modal: 0 8px 32px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-gold: 0 0 24px rgba(226, 214, 9, 0.3);
+}
+
+/* ── Base Reset ──────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-family-sans);
+  background-color: #0f1317;
+  color: #f5f5f5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100dvh;
+  background-color: #0f1317;
+}
+
+/* ── Section separator utility ───────────────────────────────────────────── */
+.section-divider {
+  border-top: 1px solid #2d3840;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: #171d22;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3a4650;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6b6404;
+}
+
+/* ── Focus Ring ──────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid #e2d609;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Selection ───────────────────────────────────────────────────────────── */
+::selection {
+  background-color: rgba(226, 214, 9, 0.25);
+  color: #f5f5f5;
+}
