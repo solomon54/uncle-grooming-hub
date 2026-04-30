@@ -64,6 +64,23 @@ export class ProjectionEngine {
   }
 
   // --------------------------------------------------
+  // SUBSCRIPTION
+  // --------------------------------------------------
+
+  private listeners = new Set<() => void>();
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private notify(): void {
+    for (const listener of this.listeners) {
+      listener();
+    }
+  }
+
+  // --------------------------------------------------
   // EVENT APPLICATION
   // --------------------------------------------------
 
@@ -77,6 +94,8 @@ export class ProjectionEngine {
     if (!this.lastHLC || incoming > this.lastHLC) {
       this.lastHLC = incoming;
     }
+
+    this.notify();
   }
 
   private applyToInstance(
@@ -102,8 +121,19 @@ export class ProjectionEngine {
     );
 
     for (const event of sorted) {
-      this.apply(event);
+      // Direct application to avoid multiple notify() calls
+      for (const instance of this.projections.values()) {
+        this.applyToInstance(instance, event);
+      }
+
+      // Keep HLC updated
+      const incoming = event.metadata.hlc_timestamp;
+      if (!this.lastHLC || incoming > this.lastHLC) {
+        this.lastHLC = incoming;
+      }
     }
+
+    this.notify(); // Single notification at the end
   }
 
   // --------------------------------------------------
