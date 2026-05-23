@@ -1,116 +1,109 @@
-// src/core/runtime/runtime.ts
-
-import type { RxDatabase } from "rxdb";
-import { journalService } from "@/core/journal/journal.service";
-import { projectionEngine } from "@/core/projection/projection.engine";
-import { AllEvents } from "@/domain/events/event.definitions";
-import type { QueueBoardState } from "@/core/projection/queue-board.projection";
-
 /**
- * Runtime Orchestrator
+ * @file runtime.ts
+ * @module core/runtime
  *
- * Central execution layer of the system.
+ * Runtime Orchestrator — bootstrap sequence and single write entry point.
  *
- * Guarantees:
- * - Single write entry point
- * - Strict append-only event flow
- * - Deterministic projection updates
+ * Specification: MODULE_PRIORITY.md P4.1
+ *                TAS v1.0 §3 — Local Event Journal Design
+ *                AGENT.md §2 — Layer Architecture (Layer 2)
+ *
+ * Bootstrap sequence (order matters per MODULE_PRIORITY.md P4.1):
+ *   1. terminalIdentity — ensure terminal_id exists
+ *   2. initializeDatabase — open RxDB, register all 6 aggregate schemas
+ *   3. journalService.setDatabase — wire journal to DB
+ *   4. projectionEngine.registerCoreProjections — load all 3 projectors
+ *   5. replayFromStart — reconstitute state from journal
+ *
+ * Write path: emit() → journalService.commitEvent() → projectionEngine.apply()
  */
+
+import type { RxDatabase }    from "rxdb";
+import { journalService }     from "@/core/journal/journal.service";
+import { projectionEngine }   from "@/core/projection/projection.engine";
+import type { AllEvents }     from "@/domain/events/event.definitions";
+import type { QueueBoardView } from "@/projections/queue-board.view";
+
+// ─── Runtime ──────────────────────────────────────────────────────────────────
+
 export class Runtime {
   private initialized = false;
 
-  // --------------------------------------------------
-  // INIT
-  // --------------------------------------------------
+  // ── Init ────────────────────────────────────────────────────────────────────
 
-  /**
-   * Initialize runtime (MUST be called once)
-   */
   async init(db: RxDatabase): Promise<void> {
     if (this.initialized) return;
 
+    // Wire journal to database
     journalService.setDatabase(db);
 
-    // IMPORTANT: must await (prevents race condition)
+    // Register all core projections (QueueBoard, BarberLane, Transaction)
     await projectionEngine.registerCoreProjections();
 
     this.initialized = true;
   }
 
-  /**
-   * Internal safety guard
-   */
   private ensureInitialized(): void {
     if (!this.initialized) {
-      throw new Error("Runtime not initialized. Call runtime.init() first.");
+      throw new Error("[Runtime] Not initialized. Call runtime.init() first.");
     }
   }
 
-  // --------------------------------------------------
-  // WRITE PATH
-  // --------------------------------------------------
+  // ── Write Path ───────────────────────────────────────────────────────────────
 
   /**
-   * Emit a domain event
+   * Emit a domain event.
+   * Flow: commitEvent() → journal (RxDB) → projectionEngine.apply() → notify subscribers
    *
-   * Flow:
-   * 1. Persist → Journal
-   * 2. Apply → Projections
+   * Returns the updated QueueBoardView for backward compatibility.
+   * Screens should use hooks (useQueueBoard etc.) for reactive updates.
    */
-  async emit(event: AllEvents): Promise<QueueBoardState | undefined> {
+  async emit(event: AllEvents): Promise<QueueBoardView | undefined> {
     this.ensureInitialized();
 
-    // 1. Source of truth
-    await journalService.appendEvent(event);
+    // 1. Persist to journal (enforces all 5 invariants)
+    const result = await journalService.appendEvent(event);
 
-    // 2. Update read models
+    // 2. Update projections synchronously
     projectionEngine.apply(event);
 
-    return projectionEngine.getState<QueueBoardState>("QUEUE_BOARD_VIEW");
+    return projectionEngine.getState<QueueBoardView>("QUEUE_BOARD_VIEW");
   }
 
-  // --------------------------------------------------
-  // BOOTSTRAP
-  // --------------------------------------------------
+  // ── Bootstrap ────────────────────────────────────────────────────────────────
 
   /**
-   * Full replay from beginning of time
+   * Full replay from beginning of journal.
+   * Called once after init() to reconstitute state.
    */
-  async replayFromStart(): Promise<QueueBoardState | undefined> {
+  async replayFromStart(): Promise<QueueBoardView | undefined> {
     this.ensureInitialized();
 
     const events = await journalService.getEventsAfter("0");
-
     projectionEngine.rebuild(events);
 
-    return projectionEngine.getState<QueueBoardState>("QUEUE_BOARD_VIEW");
+    return projectionEngine.getState<QueueBoardView>("QUEUE_BOARD_VIEW");
   }
 
-  // --------------------------------------------------
-  // SYNC
-  // --------------------------------------------------
+  // ── Incremental Sync ─────────────────────────────────────────────────────────
 
   /**
-   * Incremental sync using HLC cursor
+   * Apply only new events since last known HLC.
+   * Used by sync engine when new cloud events arrive.
    */
-  async syncNewEvents(): Promise<QueueBoardState | undefined> {
+  async syncNewEvents(): Promise<QueueBoardView | undefined> {
     this.ensureInitialized();
 
     const lastHLC = projectionEngine.getLastHLC();
-
-    if (!lastHLC) {
-      return this.replayFromStart();
-    }
+    if (!lastHLC) return this.replayFromStart();
 
     const newEvents = await journalService.getEventsAfter(lastHLC);
-
     projectionEngine.applyBatch(newEvents);
 
-    return projectionEngine.getState<QueueBoardState>("QUEUE_BOARD_VIEW");
+    return projectionEngine.getState<QueueBoardView>("QUEUE_BOARD_VIEW");
   }
 }
 
-/**
- * Singleton
- */
+// ─── Singleton ────────────────────────────────────────────────────────────────
+
 export const runtime = new Runtime();

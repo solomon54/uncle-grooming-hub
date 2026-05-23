@@ -58,6 +58,10 @@ export interface CheckInCustomerParams {
   preferredBarberId:  string | null;
   checkinMethod?:     "walk-in" | "remote";
   reservationId?:     string;
+  /** Customer first name — stored for display (initials derived by projection) */
+  customerName?:      string;
+  /** Queue token e.g. "A-07" — CXS v1.1 §3.3 */
+  queueToken?:        string;
 }
 
 export async function checkInCustomer(params: CheckInCustomerParams) {
@@ -71,7 +75,9 @@ export async function checkInCustomer(params: CheckInCustomerParams) {
       preferred_barber_id: params.preferredBarberId ?? "",
       checkin_method:      params.checkinMethod ?? "walk-in",
       reservation_id:      params.reservationId,
-    },
+      customer_name:       params.customerName,
+      queue_token:         params.queueToken,
+    } as CustomerCheckedInEvent["payload"] & Record<string, unknown>,
     metadata: buildMetadata(params.sessionId),
   };
 
