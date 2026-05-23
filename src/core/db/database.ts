@@ -5,12 +5,12 @@
  * RxDB Database Factory — offline-first local journal store.
  *
  * Specification: TAS v1.0 §3 — Local Event Journal Design
+ *                AGENT.md §2 — File System Contract (Layer 1)
+ *                MODULE_PRIORITY.md P1.1
  *
- * Storage: IndexedDB via Dexie (browser-native, no server required)
- * Dev mode: Wraps storage with AJV schema validator (RxDB requirement)
- * Prod mode: Raw Dexie storage (no validation overhead)
- *
- * Singleton pattern — one database instance per browser context.
+ * Registers all 6 aggregate collections per ECS v1.3 §1.
+ * Dev mode wraps storage with AJV schema validator (RxDB requirement).
+ * Singleton — one database instance per browser context.
  */
 
 import { createRxDatabase, addRxPlugin, type RxDatabase } from "rxdb";
@@ -22,7 +22,6 @@ let dbPromise: Promise<RxDatabase> | null = null;
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 export async function getDatabase(): Promise<RxDatabase> {
-  // SSR guard — RxDB is browser-only
   if (typeof window === "undefined") {
     return null as unknown as RxDatabase;
   }
@@ -32,43 +31,52 @@ export async function getDatabase(): Promise<RxDatabase> {
   dbPromise = (async () => {
     const isDev = process.env.NODE_ENV === "development";
 
-    // 1. Dev mode plugin (must be added before createRxDatabase)
     if (isDev) {
       const { RxDBDevModePlugin } = await import("rxdb/plugins/dev-mode");
       addRxPlugin(RxDBDevModePlugin);
     }
 
-    // 2. Base storage — Dexie (IndexedDB)
     const { getRxStorageDexie } = await import("rxdb/plugins/storage-dexie");
     const baseStorage = getRxStorageDexie();
 
-    // 3. In dev mode, wrap with AJV schema validator (required by RxDB dev mode)
-    //    This catches schema violations early and surfaces clear error messages.
     let storage = baseStorage;
-
     if (isDev) {
       const { wrappedValidateAjvStorage } = await import("rxdb/plugins/validate-ajv");
       storage = wrappedValidateAjvStorage({ storage: baseStorage }) as typeof baseStorage;
     }
 
-    console.log("[DB] Initializing RxDB journal…");
+    console.log("[DB] Initializing RxDB — all 6 aggregates…");
 
     try {
       const db = await createRxDatabase({
-        name:            "ugh_local_journal_v3",
+        name:            "ugh_local_journal_v4",
         storage,
         ignoreDuplicate: true,
       });
 
-      const { journalSchema } = await import("@/core/journal/journal.schema");
+      // ── Import all schemas ──────────────────────────────────────────────────
+      const { journalSchema }          = await import("@/core/journal/journal.schema");
+      const { queueEntrySchema }       = await import("./schemas/queue-entry.schema");
+      const { barberLaneSchema }       = await import("./schemas/barber-lane.schema");
+      const { transactionSchema }      = await import("./schemas/transaction.schema");
+      const { customerProfileSchema }  = await import("./schemas/customer-profile.schema");
+      const { terminalSessionSchema }  = await import("./schemas/terminal-session.schema");
+      const { systemProcessSchema }    = await import("./schemas/system-process.schema");
 
       await db.addCollections({
-        journal: { schema: journalSchema },
+        // Primary unified journal (used by journal.service.ts)
+        journal:          { schema: journalSchema },
+        // Per-aggregate collections (used by sync engine and projections)
+        queue_entries:    { schema: queueEntrySchema },
+        barber_lanes:     { schema: barberLaneSchema },
+        transactions:     { schema: transactionSchema },
+        customer_profiles:{ schema: customerProfileSchema },
+        terminal_sessions:{ schema: terminalSessionSchema },
+        system_processes: { schema: systemProcessSchema },
       });
 
-      console.log("[DB] Journal ready ✓");
+      console.log("[DB] All collections ready ✓");
 
-      // Expose on window for debug console access in development
       if (isDev) {
         (window as Window & { db?: RxDatabase }).db = db;
       }
@@ -76,7 +84,6 @@ export async function getDatabase(): Promise<RxDatabase> {
       return db;
     } catch (err) {
       console.error("[DB] Initialization failed:", err);
-      // Reset so the next call retries cleanly
       dbPromise = null;
       throw err;
     }
