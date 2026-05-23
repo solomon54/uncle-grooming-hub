@@ -3,25 +3,29 @@
  * @module ui/components/public
  *
  * Scroll-triggered reveal animation wrapper.
- * Elements animate in as they enter the viewport — fade + slide up.
- * Stagger delay supported for sequential reveals within a group.
+ *
+ * Performance rules (from ui-standards.md §5):
+ *   - Only animates opacity + translateY (GPU-composited, no layout repaints)
+ *   - Uses whileInView instead of useInView to avoid manual ref management
+ *   - viewport.once: true — animates once, never re-triggers
+ *   - viewport.margin: "-60px" — triggers slightly before fully in view
+ *   - ease: [0.16, 1, 0.3, 1] — expo-out, fast settle, no bounce
  */
 
 "use client";
 
 import React from "react";
-import { motion, useInView } from "framer-motion";
-import { useRef } from "react";
+import { motion } from "framer-motion";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AnimateInProps {
   children:   React.ReactNode;
-  delay?:     number;   // seconds
-  duration?:  number;   // seconds
-  y?:         number;   // px offset to slide from
+  delay?:     number;   // seconds — max 0.4 per standards
+  duration?:  number;   // seconds — 0.4–0.9 range
+  y?:         number;   // px slide-up offset
   className?: string;
-  once?:      boolean;  // only animate once (default: true)
+  style?:     React.CSSProperties;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -29,24 +33,22 @@ interface AnimateInProps {
 export function AnimateIn({
   children,
   delay    = 0,
-  duration = 0.7,
-  y        = 32,
+  duration = 0.65,
+  y        = 28,
   className = "",
-  once     = true,
+  style,
 }: AnimateInProps) {
-  const ref     = useRef<HTMLDivElement>(null);
-  const inView  = useInView(ref, { once, margin: "-80px 0px" });
-
   return (
     <motion.div
-      ref={ref}
       className={className}
+      style={style}
       initial={{ opacity: 0, y }}
-      animate={inView ? { opacity: 1, y: 0 } : { opacity: 0, y }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-60px" }}
       transition={{
         duration,
         delay,
-        ease: [0.16, 1, 0.3, 1], // expo out — fast settle, no bounce
+        ease: [0.16, 1, 0.3, 1],
       }}
     >
       {children}
@@ -58,21 +60,19 @@ export function AnimateIn({
 
 interface StaggerProps {
   children:   React.ReactNode;
-  stagger?:   number;  // seconds between each child
+  stagger?:   number;
   className?: string;
+  style?:     React.CSSProperties;
 }
 
-/**
- * Wraps children and staggers their AnimateIn delays automatically.
- * Each direct child gets an incrementing delay.
- */
-export function StaggerGroup({ children, stagger = 0.1, className = "" }: StaggerProps) {
+export function StaggerGroup({ children, stagger = 0.08, className = "", style }: StaggerProps) {
   return (
-    <div className={className}>
+    <div className={className} style={style}>
       {React.Children.map(children, (child, i) => {
         if (!React.isValidElement(child)) return child;
+        const props = child.props as AnimateInProps;
         return React.cloneElement(child as React.ReactElement<AnimateInProps>, {
-          delay: (child.props as AnimateInProps).delay ?? i * stagger,
+          delay: props.delay ?? i * stagger,
         });
       })}
     </div>

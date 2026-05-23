@@ -46,7 +46,7 @@ export function HowItWorksSection() {
             <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#e2d609", display: "block", marginBottom: "16px" }}>
               The Process
             </span>
-            <h2 style={{ fontSize: "clamp(32px, 5vw, 56px)", fontWeight: 900, color: "#ffffff", marginBottom: "20px", lineHeight: 1.1 }}>
+            <h2 style={{ fontSize: "clamp(22px, 3vw, 36px)", fontWeight: 800, color: "#ffffff", marginBottom: "20px", lineHeight: 1.15 }}>
               Three Steps. Zero Friction.
             </h2>
             <p style={{ color: "rgba(255,255,255,0.5)", maxWidth: "480px", margin: "0 auto", fontSize: "17px", lineHeight: 1.7 }}>

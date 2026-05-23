@@ -1,34 +1,39 @@
-// src/ui/hooks/useQueueBoard.ts
+/**
+ * @file useQueueBoard.ts
+ * @module ui/hooks
+ *
+ * useQueueBoard — reactive hook for the QueueBoardView projection.
+ *
+ * Specification: MODULE_PRIORITY.md P5.2
+ *                AGENT.md §5 — Hooks subscribe to projections, never raw DB
+ *
+ * Subscribes to "QUEUE_BOARD_VIEW" projection via ProjectionEngine.
+ * Re-renders only when projection state changes (event-driven, no polling).
+ */
+
+"use client";
 
 import { useEffect, useState } from "react";
-import { projectionEngine } from "@/core/projection/projection.engine";
-import type { QueueBoardState } from "@/core/projection/queue-board.projection";
+import { projectionEngine }    from "@/core/projection/projection.engine";
+import type { QueueBoardView } from "@/projections/queue-board.view";
 
-/**
- * useQueueBoard
- *
- * Reactive hook that subscribes to Queue Board projection.
- * Event-driven (no polling).
- */
-export function useQueueBoard(): QueueBoardState | null {
-  const [state, setState] = useState<QueueBoardState | null>(() => {
-    return (
-      projectionEngine.getState<QueueBoardState>("QUEUE_BOARD_VIEW") ?? null
-    );
-  });
+export function useQueueBoard(): { view: QueueBoardView | null; isLoading: boolean } {
+  const [view, setView] = useState<QueueBoardView | null>(() =>
+    projectionEngine.getState<QueueBoardView>("QUEUE_BOARD_VIEW") ?? null
+  );
 
   useEffect(() => {
-    const unsubscribe = projectionEngine.subscribe(() => {
-      const next =
-        projectionEngine.getState<QueueBoardState>("QUEUE_BOARD_VIEW");
+    // Sync immediately in case projection updated before mount
+    const current = projectionEngine.getState<QueueBoardView>("QUEUE_BOARD_VIEW");
+    if (current) setView(current);
 
-      if (next) {
-        setState(next);
-      }
+    const unsubscribe = projectionEngine.subscribe(() => {
+      const next = projectionEngine.getState<QueueBoardView>("QUEUE_BOARD_VIEW");
+      if (next) setView(next);
     });
 
     return unsubscribe;
   }, []);
 
-  return state;
+  return { view, isLoading: view === null };
 }

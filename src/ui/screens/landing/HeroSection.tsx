@@ -54,8 +54,8 @@ export function HeroSection() {
     <section className="relative min-h-screen flex flex-col justify-end overflow-hidden" aria-label="Hero">
       <Slideshow current={current} />
 
-      <div className="relative z-10 w-full" style={{ padding: "0 24px 96px", maxWidth: "1280px", margin: "0 auto" }}>
-        <div style={{ maxWidth: "720px", paddingTop: "120px" }}>
+      <div className="relative z-10 w-full" style={{ padding: "0 24px 72px", maxWidth: "1280px", margin: "0 auto" }}>
+        <div style={{ maxWidth: "640px", paddingTop: "100px" }}>
 
           {/* Eyebrow */}
           <motion.div
@@ -79,7 +79,7 @@ export function HeroSection() {
             initial={{ opacity: 0, y: 32 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.9, delay: 0.35, ease: [0.16, 1, 0.3, 1] }}
-            style={{ fontSize: "clamp(48px, 8vw, 96px)", fontWeight: 900, color: "#ffffff", lineHeight: 1.0, letterSpacing: "-0.02em", marginBottom: "24px" }}
+            style={{ fontSize: "clamp(36px, 6vw, 64px)", fontWeight: 900, color: "#ffffff", lineHeight: 1.05, letterSpacing: "-0.02em", marginBottom: "20px" }}
           >
             Where Craft<br />
             <span style={{ color: "#e2d609" }}>Meets</span> Precision.
