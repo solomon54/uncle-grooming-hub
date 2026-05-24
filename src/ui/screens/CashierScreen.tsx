@@ -38,7 +38,7 @@ import {
   addServiceIntent,
   removeServiceIntent,
 } from "@/core/actions/queue.actions";
-import { generateQueueToken }            from "@/core/queue/queue-token";
+import { issueQueueToken }               from "@/core/queue/queue-token";
 import type { QueueEntryView }           from "@/projections/queue-board.view";
 import type { BarberLaneView }           from "@/projections/barber-lane.view";
 
@@ -114,7 +114,7 @@ function CheckInForm({ barbers, rosterBarbers, totalToday, sessionId, onSuccess 
 
     try {
       const aggregateId = crypto.randomUUID();
-      const token       = generateQueueToken(totalToday);
+      const token       = issueQueueToken();
 
       await checkInCustomer({
         aggregateId,
