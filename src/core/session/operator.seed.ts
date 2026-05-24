@@ -5,58 +5,46 @@
  * Operator Roster Seed — Phase 1 placeholder.
  *
  * Specification: PRD §2.1 — Actor Definitions
- *                TAS v1.0 §9 — Security Architecture
+ *                SOS v1.0 §2 — Two-factor: username + PIN
  *
- * This seed is loaded into localStorage on first boot if no roster exists.
- * Replace with Admin-managed roster in Phase 2.
+ * Login: username (unique) + 6-digit PIN.
+ * Username uniqueness prevents PIN collision between operators.
  *
  * @security PINs are plain strings in Phase 1 (local-only, no network).
- *           Phase 2: replace with bcrypt hashes in encrypted local DB.
- *
- * @todo Phase 2 — Admin UI to add/remove/update operators with hashed PINs.
+ * @todo Phase 2 — Replace with HMAC-SHA256 hashed PINs (SOS v1.0 §6 EVENT 28)
+ * @todo Phase 2 — Admin UI to add/remove/update operators
  */
 
 import type { Operator } from "./session.types";
 
-// ─── Seed Data ────────────────────────────────────────────────────────────────
-
-/**
- * Default operator roster.
- * Edit these values directly for Phase 1 setup.
- * actor_id values are stable UUIDs — do NOT change them after first use,
- * as they are embedded in the immutable event journal.
- */
 export const OPERATOR_SEED: Operator[] = [
-  // ── System Owner ───────────────────────────────────────────────────────────
   {
     actor_id:       "actor_owner_001",
+    username:       "owner@unclegrooming.com",
     name:           "System Owner",
     role:           "SYSTEM_OWNER",
     pin:            "000000",
     is_first_login: false,
   },
-
-  // ── Admin ──────────────────────────────────────────────────────────────────
   {
     actor_id:       "actor_admin_001",
-    name:           "Shop Owner",
+    username:       "admin@unclegrooming.com",
+    name:           "Shop Admin",
     role:           "ADMIN",
     pin:            "111111",
     is_first_login: false,
   },
-
-  // ── Cashier ────────────────────────────────────────────────────────────────
   {
     actor_id:       "actor_cashier_001",
+    username:       "cashier@unclegrooming.com",
     name:           "Cashier",
     role:           "CASHIER",
     pin:            "222222",
     is_first_login: false,
   },
-
-  // ── Barbers ────────────────────────────────────────────────────────────────
   {
     actor_id:       "actor_barber_001",
+    username:       "barber1@unclegrooming.com",
     name:           "Barber 1",
     role:           "BARBER",
     pin:            "333333",
@@ -65,6 +53,7 @@ export const OPERATOR_SEED: Operator[] = [
   },
   {
     actor_id:       "actor_barber_002",
+    username:       "barber2@unclegrooming.com",
     name:           "Barber 2",
     role:           "BARBER",
     pin:            "444444",
@@ -73,6 +62,7 @@ export const OPERATOR_SEED: Operator[] = [
   },
   {
     actor_id:       "actor_barber_003",
+    username:       "barber3@unclegrooming.com",
     name:           "Barber 3",
     role:           "BARBER",
     pin:            "555555",

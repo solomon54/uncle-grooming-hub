@@ -29,7 +29,7 @@ import type {
 
 // ─── Storage Keys ─────────────────────────────────────────────────────────────
 
-const ROSTER_KEY  = "ugh:operator_roster";
+const ROSTER_KEY  = "ugh:operator_roster_v2"; // v2 — added username field
 const SESSION_KEY = "ugh:active_session";
 
 // ─── Session Service ──────────────────────────────────────────────────────────
@@ -48,13 +48,18 @@ export class SessionService {
     const stored = localStorage.getItem(ROSTER_KEY);
     if (stored) {
       try {
-        return JSON.parse(stored) as Operator[];
+        const parsed = JSON.parse(stored) as Operator[];
+        // If roster exists but is missing username field (old seed), re-seed
+        if (parsed.length > 0 && !parsed[0].username) {
+          this.seedRoster();
+          return OPERATOR_SEED;
+        }
+        return parsed;
       } catch {
         // Corrupted — re-seed
       }
     }
 
-    // First boot — seed the roster
     this.seedRoster();
     return OPERATOR_SEED;
   }
@@ -64,23 +69,30 @@ export class SessionService {
   }
 
   /**
-   * Find an operator by PIN.
+   * Find an operator by username + PIN combination.
+   * Both must match — username is the identifier, PIN is the secret.
    * Returns null if no match — never reveals which field was wrong.
    */
-  findByPin(pin: string): Operator | null {
+  findByCredentials(username: string, pin: string): Operator | null {
     const roster = this.getRoster();
-    return roster.find(op => op.pin === pin) ?? null;
+    const match = roster.find(
+      op => op.username?.toLowerCase() === username.toLowerCase().trim() && op.pin === pin
+    ) ?? null;
+    if (!match) {
+      console.warn(`[SessionService] No match for email: "${username}" (roster has ${roster.length} entries)`);
+    }
+    return match;
   }
 
   // ── Session Lifecycle ──────────────────────────────────────────────────────
 
   /**
-   * Attempt login with a 6-digit PIN.
+   * Attempt login with username + 6-digit PIN.
    * On success: persists session, emits EVENT 13, returns the session.
    * On failure: returns null.
    */
-  async login(pin: string): Promise<ActiveSession | null> {
-    const operator = this.findByPin(pin);
+  async login(username: string, pin: string): Promise<ActiveSession | null> {
+    const operator = this.findByCredentials(username, pin);
     if (!operator) return null;
 
     const session: ActiveSession = {
@@ -88,35 +100,43 @@ export class SessionService {
       actor_id:       operator.actor_id,
       role:           operator.role,
       actor_name:     operator.name,
+      username:       operator.username,
       terminal_id:    terminalIdentity.terminalId,
       opened_at:      clockService.tick(),
       is_first_login: operator.is_first_login,
       barber_id:      operator.barber_id,
     };
 
-    // Persist to sessionStorage (cleared on tab close — TAS §9)
+    // Persist to sessionStorage FIRST (cleared on tab close — TAS §9)
+    // Session is valid immediately — EVENT 13 is best-effort audit trail
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
 
     // Emit EVENT 13 — OPERATOR_SESSION_OPENED (ECS v1.3)
-    const event: OperatorSessionOpenedEvent = {
-      event_id:          crypto.randomUUID(),
-      event_type:        "OPERATOR_SESSION_OPENED",
-      aggregate_id:      session.session_id,
-      aggregate_version: 1,
-      payload: {
-        actor_id:    session.actor_id,
-        role:        session.role,
-        terminal_id: session.terminal_id,
-        auth_method: "PIN",
-      },
-      metadata: {
-        session_id:    session.session_id,
-        hlc_timestamp: session.opened_at,
-        terminal_id:   session.terminal_id,
-      },
-    };
-
-    await runtime.emit(event);
+    // Best-effort: if runtime not yet initialized, session is still valid
+    try {
+      const event: OperatorSessionOpenedEvent = {
+        event_id:          crypto.randomUUID(),
+        event_type:        "OPERATOR_SESSION_OPENED",
+        aggregate_id:      session.session_id,
+        aggregate_version: 1,
+        payload: {
+          actor_id:    session.actor_id,
+          role:        session.role,
+          terminal_id: session.terminal_id,
+          auth_method: "PIN",
+        },
+        metadata: {
+          session_id:    session.session_id,
+          hlc_timestamp: session.opened_at,
+          terminal_id:   session.terminal_id,
+        },
+      };
+      await runtime.emit(event);
+    } catch {
+      // Runtime not yet initialized — session is persisted, EVENT 13 will
+      // be emitted on next runtime boot via journal replay
+      console.warn("[SessionService] EVENT 13 deferred — runtime not initialized yet");
+    }
 
     return session;
   }

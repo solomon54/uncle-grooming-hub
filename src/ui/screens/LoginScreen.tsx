@@ -2,97 +2,71 @@
  * @file LoginScreen.tsx
  * @module ui/screens
  *
- * Operator Login — 6-digit PIN entry.
+ * Operator Login — email + 6-digit PIN.
  *
  * Specification: ECS v1.3 EVENT 13 — OPERATOR_SESSION_OPENED
  *                AMS v1.3 — Terminal Operations (Boundary Module)
- *                IMS v1.1 — Operator Login screen
- *                UI Standards §9 — PIN Entry
- *                UI Standards §7 — Operational Screen Shell
+ *                SOS v1.0 §2 — Two-factor: email (identity) + PIN (secret)
+ *                ui-standards.md §10 — PIN Entry
  *
  * Flow:
- *   1. Operator selects their name from the roster
- *   2. Enters 6-digit PIN
- *   3. On success → EVENT 13 emitted → redirect to role screen
- *   4. On failure → shake animation, clear PIN, allow retry
+ *   Step 1 — Enter email address
+ *   Step 2 — Enter 6-digit PIN
+ *   System identifies operator from email + PIN combination
  *
- * Security note (Phase 1):
- *   PINs are validated locally against the seeded roster in localStorage.
- *   No network call is made. This is intentional — the system must work
- *   fully offline (TAS §1 — Local Operational Authority).
+ * Responsive: adapts from 320px phones to 4K displays.
+ * Desktop: hardware keyboard only. Mobile: custom numpad.
  */
 
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter }       from "next/navigation";
+import { useRouter }               from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { sessionService }  from "@/core/session/session.service";
-import type { Operator }   from "@/core/session/session.types";
+import { sessionService }          from "@/core/session/session.service";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PIN_LENGTH = 6;
 
-// ─── Role redirect map ────────────────────────────────────────────────────────
-
 const ROLE_REDIRECT: Record<string, string> = {
   CASHIER:      "/cashier",
-  BARBER:       "/barber",   // redirected to /barber/[id] after session check
+  BARBER:       "/barber",
   ADMIN:        "/admin",
   SYSTEM_OWNER: "/admin",
 };
 
 // ─── PIN Box ──────────────────────────────────────────────────────────────────
 
-interface PinBoxProps {
-  filled:  boolean;
-  active:  boolean;
-  error:   boolean;
-  success: boolean;
-  index:   number;
-}
-
-function PinBox({ filled, active, error, success }: PinBoxProps) {
-  const borderColor = error
-    ? "#ef4444"
-    : success
-    ? "#e2d609"
-    : active
-    ? "#e2d609"
-    : filled
-    ? "#3a4650"
-    : "#2d3840";
-
-  const boxShadow = active && !error
-    ? "0 0 0 3px rgba(226,214,9,0.15)"
-    : error
-    ? "0 0 0 3px rgba(239,68,68,0.15)"
-    : success
-    ? "0 0 0 3px rgba(226,214,9,0.2)"
-    : "none";
-
-  const bg = success
-    ? "rgba(226,214,9,0.12)"
-    : filled
-    ? "#252f38"
-    : "#1e262d";
+function PinBox({
+  filled, active, error, success,
+}: {
+  filled: boolean; active: boolean; error: boolean; success: boolean;
+}) {
+  const border = error ? "#ef4444" : success ? "#e2d609" : active ? "#e2d609" : filled ? "#3a4650" : "#2d3840";
+  const glow   = error ? "0 0 0 3px rgba(239,68,68,0.15)"
+    : (success || active) ? "0 0 0 3px rgba(226,214,9,0.15)" : "none";
+  const bg     = success ? "rgba(226,214,9,0.12)" : filled ? "#252f38" : "#1e262d";
 
   return (
     <div style={{
-      width: "52px", height: "64px",
-      borderRadius: "12px",
-      border: `2px solid ${borderColor}`,
+      flex: "1 1 0",
+      maxWidth: "52px",
+      aspectRatio: "4/5",
+      borderRadius: "10px",
+      border: `2px solid ${border}`,
       background: bg,
-      boxShadow,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      transition: "all 0.15s ease",
-      flexShrink: 0,
+      boxShadow: glow,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      transition: "border-color 0.15s, box-shadow 0.15s, background 0.15s",
     }}>
       {filled && (
         <div style={{
-          width: "10px", height: "10px", borderRadius: "50%",
-          background: success ? "#e2d609" : "rgba(255,255,255,0.8)",
+          width: "35%", height: "35%",
+          borderRadius: "50%",
+          background: success ? "#e2d609" : "rgba(255,255,255,0.85)",
           transition: "background 0.2s",
         }} />
       )}
@@ -102,129 +76,61 @@ function PinBox({ filled, active, error, success }: PinBoxProps) {
 
 // ─── Numpad Key ───────────────────────────────────────────────────────────────
 
-interface NumKeyProps {
-  label:    string;
-  sublabel?: string;
-  onPress:  () => void;
-  disabled?: boolean;
-  variant?: "default" | "delete" | "clear";
-}
+function NumKey({
+  label, sub, onPress, disabled, ghost,
+}: {
+  label: string; sub?: string; onPress: () => void;
+  disabled?: boolean; ghost?: boolean;
+}) {
+  const [down, setDown] = useState(false);
 
-function NumKey({ label, sublabel, onPress, disabled, variant = "default" }: NumKeyProps) {
-  const [pressed, setPressed] = useState(false);
-
-  const handlePress = () => {
+  const press = () => {
     if (disabled) return;
-    setPressed(true);
-    setTimeout(() => setPressed(false), 120);
+    setDown(true);
+    setTimeout(() => setDown(false), 100);
     onPress();
   };
 
-  const bg = pressed
-    ? "#3a4650"
-    : variant === "delete" || variant === "clear"
-    ? "transparent"
-    : "#1e262d";
-
-  const border = variant === "delete" || variant === "clear"
-    ? "1px solid transparent"
-    : "1px solid #2d3840";
-
   return (
     <button
-      onClick={handlePress}
+      onClick={press}
       disabled={disabled}
+      aria-label={label}
       style={{
-        width: "72px", height: "72px",
-        borderRadius: "16px",
-        background: bg,
-        border,
-        color: variant === "delete" ? "rgba(255,255,255,0.5)" : "#f5f5f5",
-        fontSize: variant === "delete" ? "20px" : "22px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "2px",
+        aspectRatio: "1",
+        borderRadius: "14px",
+        background: down ? "#3a4650" : ghost ? "transparent" : "#1e262d",
+        border: ghost ? "1px solid transparent" : "1px solid #2d3840",
+        color: ghost ? "rgba(255,255,255,0.45)" : "#f5f5f5",
+        fontSize: "clamp(16px, 4.5vw, 22px)",
         fontWeight: 600,
         cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.4 : 1,
+        opacity: disabled ? 0.35 : 1,
+        transform: down ? "scale(0.93)" : "scale(1)",
         transition: "background 0.1s, transform 0.1s",
-        transform: pressed ? "scale(0.94)" : "scale(1)",
-        display: "flex", flexDirection: "column",
-        alignItems: "center", justifyContent: "center",
-        gap: "2px",
         userSelect: "none",
         WebkitTapHighlightColor: "transparent",
+        touchAction: "manipulation",
       }}
-      aria-label={label}
     >
       <span>{label}</span>
-      {sublabel && (
-        <span style={{ fontSize: "8px", letterSpacing: "0.1em", color: "rgba(255,255,255,0.3)", fontWeight: 500 }}>
-          {sublabel}
+      {sub && (
+        <span style={{
+          fontSize: "clamp(7px, 1.8vw, 9px)",
+          letterSpacing: "0.08em",
+          color: "rgba(255,255,255,0.28)",
+          fontWeight: 500,
+          lineHeight: 1,
+        }}>
+          {sub}
         </span>
       )}
     </button>
-  );
-}
-
-// ─── Operator Selector ────────────────────────────────────────────────────────
-
-interface OperatorSelectorProps {
-  operators:        Operator[];
-  selected:         Operator | null;
-  onSelect:         (op: Operator) => void;
-}
-
-function OperatorSelector({ operators, selected, onSelect }: OperatorSelectorProps) {
-  const ROLE_COLOR: Record<string, string> = {
-    ADMIN:   "#fb923c",
-    CASHIER: "#38bdf8",
-    BARBER:  "#2dd4bf",
-  };
-
-  return (
-    <div style={{ width: "100%", marginBottom: "32px" }}>
-      <p style={{
-        fontSize: "11px", fontWeight: 700,
-        color: "rgba(255,255,255,0.4)",
-        textTransform: "uppercase", letterSpacing: "0.12em",
-        marginBottom: "12px", textAlign: "center",
-      }}>
-        Who are you?
-      </p>
-      <div style={{
-        display: "flex", flexWrap: "wrap",
-        gap: "8px", justifyContent: "center",
-      }}>
-        {operators.map(op => {
-          const isSelected = selected?.actor_id === op.actor_id;
-          return (
-            <button
-              key={op.actor_id}
-              onClick={() => onSelect(op)}
-              style={{
-                padding: "8px 16px", borderRadius: "9999px",
-                border: isSelected
-                  ? `2px solid ${ROLE_COLOR[op.role] ?? "#e2d609"}`
-                  : "2px solid #2d3840",
-                background: isSelected ? "rgba(226,214,9,0.08)" : "transparent",
-                color: isSelected ? "#f5f5f5" : "rgba(255,255,255,0.5)",
-                fontSize: "13px", fontWeight: isSelected ? 700 : 500,
-                cursor: "pointer",
-                transition: "all 0.15s ease",
-                WebkitTapHighlightColor: "transparent",
-              }}
-            >
-              {op.name}
-              <span style={{
-                marginLeft: "6px", fontSize: "10px",
-                color: ROLE_COLOR[op.role] ?? "#e2d609",
-                fontWeight: 700, textTransform: "uppercase",
-              }}>
-                {op.role}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 
@@ -233,140 +139,124 @@ function OperatorSelector({ operators, selected, onSelect }: OperatorSelectorPro
 export default function LoginScreen() {
   const router = useRouter();
 
-  const [operators, setOperators]     = useState<Operator[]>([]);
-  const [selected,  setSelected]      = useState<Operator | null>(null);
-  const [pin,       setPin]           = useState<string>("");
-  const [status,    setStatus]        = useState<"idle" | "error" | "success">("idle");
-  const [errorMsg,  setErrorMsg]      = useState<string>("");
-  const [isLoading, setIsLoading]     = useState(false);
+  const [step,      setStep]      = useState<"email" | "pin">("email");
+  const [email,     setEmail]     = useState("");
+  const [pin,       setPin]       = useState("");
+  const [status,    setStatus]    = useState<"idle" | "error" | "success">("idle");
+  const [errorMsg,  setErrorMsg]  = useState("");
+  const [loading,   setLoading]   = useState(false);
+  const [shake,     setShake]     = useState(false);
+  const [isMobile,  setIsMobile]  = useState(false);
 
-  // Shake animation trigger
-  const [shake, setShake] = useState(false);
+  const emailRef = useRef<HTMLInputElement>(null);
 
-  // Load roster on mount
+  // ── Detect touch device ─────────────────────────────────────────────────────
   useEffect(() => {
-    const roster = sessionService.getRoster();
-    setOperators(roster);
+    const check = () => {
+      setIsMobile(
+        window.matchMedia("(pointer: coarse)").matches ||
+        window.innerWidth < 768
+      );
+    };
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
   }, []);
 
-  // Redirect if already logged in
+  // ── Redirect if already logged in ──────────────────────────────────────────
   useEffect(() => {
-    const session = sessionService.getActiveSession();
-    if (session) {
-      const redirect =
-        session.role === "BARBER" && session.barber_id
-          ? `/barber/${session.barber_id}`
-          : ROLE_REDIRECT[session.role] ?? "/cashier";
-      router.replace(redirect);
+    const s = sessionService.getActiveSession();
+    if (s) {
+      router.replace(
+        s.role === "BARBER" && s.barber_id
+          ? `/barber/${s.barber_id}`
+          : ROLE_REDIRECT[s.role] ?? "/cashier"
+      );
     }
   }, [router]);
 
-  // ── PIN input handlers ──────────────────────────────────────────────────────
+  // ── Focus email on mount ────────────────────────────────────────────────────
+  useEffect(() => { emailRef.current?.focus(); }, []);
 
-  const appendDigit = useCallback((digit: string) => {
-    if (status === "success" || isLoading) return;
-    if (pin.length >= PIN_LENGTH) return;
+  // ── PIN digit handlers ──────────────────────────────────────────────────────
+  const addDigit = useCallback((d: string) => {
+    if (loading || status === "success" || pin.length >= PIN_LENGTH) return;
+    if (status === "error") { setStatus("idle"); setErrorMsg(""); }
+    setPin(p => p + d);
+  }, [pin, status, loading]);
 
-    // Clear error on new input
-    if (status === "error") {
-      setStatus("idle");
-      setErrorMsg("");
-    }
+  const delDigit = useCallback(() => {
+    if (loading || status === "success") return;
+    if (status === "error") { setStatus("idle"); setErrorMsg(""); }
+    setPin(p => p.slice(0, -1));
+  }, [status, loading]);
 
-    setPin(prev => prev + digit);
-  }, [pin, status, isLoading]);
+  const clearAll = useCallback(() => {
+    if (loading || status === "success") return;
+    setPin(""); setStatus("idle"); setErrorMsg("");
+  }, [status, loading]);
 
-  const deleteDigit = useCallback(() => {
-    if (status === "success" || isLoading) return;
-    if (status === "error") {
-      setStatus("idle");
-      setErrorMsg("");
-    }
-    setPin(prev => prev.slice(0, -1));
-  }, [status, isLoading]);
-
-  const clearPin = useCallback(() => {
-    if (status === "success" || isLoading) return;
-    setPin("");
-    setStatus("idle");
-    setErrorMsg("");
-  }, [status, isLoading]);
-
-  // ── Physical keyboard support ───────────────────────────────────────────────
-
+  // ── Hardware keyboard (PIN step) ────────────────────────────────────────────
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key >= "0" && e.key <= "9") appendDigit(e.key);
-      else if (e.key === "Backspace") deleteDigit();
-      else if (e.key === "Escape") clearPin();
+    if (step !== "pin") return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key >= "0" && e.key <= "9") addDigit(e.key);
+      else if (e.key === "Backspace") delDigit();
+      else if (e.key === "Escape") { clearAll(); setStep("email"); setPin(""); }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [appendDigit, deleteDigit, clearPin]);
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [step, addDigit, delDigit, clearAll]);
 
-  // ── Auto-submit when PIN is complete ───────────────────────────────────────
-
+  // ── Auto-submit when PIN full ───────────────────────────────────────────────
   useEffect(() => {
-    if (pin.length === PIN_LENGTH && status === "idle") {
-      handleSubmit();
+    if (pin.length === PIN_LENGTH && status === "idle" && step === "pin") {
+      void submit();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pin]);
 
-  // ── Submit ──────────────────────────────────────────────────────────────────
-
-  const handleSubmit = async () => {
-    if (!selected) {
-      setStatus("error");
-      setErrorMsg("Select who you are first");
+  // ── Email step submit ───────────────────────────────────────────────────────
+  const submitEmail = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed || !trimmed.includes("@")) {
+      setErrorMsg("Enter a valid email address");
       triggerShake();
-      setPin("");
       return;
     }
+    setErrorMsg("");
+    setStep("pin");
+  };
 
-    if (pin.length < PIN_LENGTH) return;
-
-    setIsLoading(true);
-
+  // ── PIN submit ──────────────────────────────────────────────────────────────
+  const submit = async () => {
+    if (pin.length < PIN_LENGTH || loading) return;
+    setLoading(true);
     try {
-      const session = await sessionService.login(pin);
-
+      const session = await sessionService.login(email.trim().toLowerCase(), pin);
       if (!session) {
-        // Wrong PIN
         setStatus("error");
-        setErrorMsg("Incorrect PIN");
+        setErrorMsg("Invalid email or PIN");
         triggerShake();
         setPin("");
         return;
       }
-
-      // Verify the logged-in operator matches the selected one
-      if (session.actor_id !== selected.actor_id) {
-        await sessionService.logout();
-        setStatus("error");
-        setErrorMsg("PIN does not match selected operator");
-        triggerShake();
-        setPin("");
-        return;
-      }
-
-      // Success
       setStatus("success");
       setTimeout(() => {
-        const redirect =
+        router.replace(
           session.role === "BARBER" && session.barber_id
             ? `/barber/${session.barber_id}`
-            : ROLE_REDIRECT[session.role] ?? "/cashier";
-        router.replace(redirect);
+            : ROLE_REDIRECT[session.role] ?? "/cashier"
+        );
       }, 500);
-
-    } catch (err) {
+    } catch {
       setStatus("error");
-      setErrorMsg("System error — try again");
+      setErrorMsg("Something went wrong — try again");
       triggerShake();
       setPin("");
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
@@ -375,16 +265,14 @@ export default function LoginScreen() {
     setTimeout(() => setShake(false), 500);
   };
 
-  // ── Numpad layout ───────────────────────────────────────────────────────────
-
-  const NUMPAD = [
-    ["1", "ABC"], ["2", "DEF"], ["3", "GHI"],
-    ["4", "JKL"], ["5", "MNO"], ["6", "PQR"],
-    ["7", "STU"], ["8", "VWX"], ["9", "YZ"],
+  // ── Numpad rows ─────────────────────────────────────────────────────────────
+  const ROWS = [
+    [["1",""],["2","ABC"],["3","DEF"]],
+    [["4","GHI"],["5","JKL"],["6","MNO"]],
+    [["7","PQR"],["8","STU"],["9","VWX"]],
   ] as const;
 
   // ── Render ──────────────────────────────────────────────────────────────────
-
   return (
     <div style={{
       minHeight: "100dvh",
@@ -393,177 +281,335 @@ export default function LoginScreen() {
       flexDirection: "column",
       alignItems: "center",
       justifyContent: "center",
-      padding: "24px 16px",
+      padding: "clamp(16px, 4vw, 32px) clamp(12px, 4vw, 24px)",
     }}>
 
-      {/* Brand */}
+      {/* ── Brand ──────────────────────────────────────────────────────────── */}
       <motion.div
-        initial={{ opacity: 0, y: -16 }}
+        initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        style={{ marginBottom: "40px", textAlign: "center" }}
+        style={{ textAlign: "center", marginBottom: "clamp(24px, 5vw, 40px)" }}
       >
         <div style={{
-          width: "48px", height: "48px", borderRadius: "14px",
-          background: "#e2d609", display: "flex",
-          alignItems: "center", justifyContent: "center",
-          margin: "0 auto 12px",
+          width: "clamp(40px, 10vw, 52px)",
+          height: "clamp(40px, 10vw, 52px)",
+          borderRadius: "clamp(10px, 2.5vw, 14px)",
+          background: "#e2d609",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          margin: "0 auto clamp(10px, 2.5vw, 14px)",
           boxShadow: "0 0 32px rgba(226,214,9,0.25)",
         }}>
-          <span style={{ color: "#0f1317", fontSize: "20px", fontWeight: 900 }}>U</span>
+          <span style={{
+            color: "#0f1317",
+            fontSize: "clamp(16px, 4vw, 22px)",
+            fontWeight: 900,
+          }}>U</span>
         </div>
         <h1 style={{
-          fontSize: "clamp(18px, 3vw, 22px)",
-          fontWeight: 800, color: "#f5f5f5",
+          fontSize: "clamp(16px, 4vw, 22px)",
+          fontWeight: 800,
+          color: "#f5f5f5",
           letterSpacing: "-0.01em",
+          margin: 0,
         }}>
           Uncle Grooming Hub
         </h1>
-        <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.35)", marginTop: "4px" }}>
-          Terminal Operations · Operator Login
+        <p style={{
+          fontSize: "clamp(11px, 2.5vw, 13px)",
+          color: "rgba(255,255,255,0.35)",
+          marginTop: "4px",
+        }}>
+          Staff Portal
         </p>
       </motion.div>
 
-      {/* Card */}
+      {/* ── Card ───────────────────────────────────────────────────────────── */}
       <motion.div
-        initial={{ opacity: 0, y: 24 }}
+        initial={{ opacity: 0, y: 28 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.55, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
         style={{
-          width: "100%", maxWidth: "360px",
+          width: "100%",
+          maxWidth: "clamp(300px, 90vw, 380px)",
           background: "#171d22",
           border: "1px solid #2d3840",
-          borderRadius: "20px",
-          padding: "28px 24px",
+          borderRadius: "clamp(14px, 3.5vw, 22px)",
+          padding: "clamp(20px, 5vw, 32px) clamp(16px, 5vw, 28px)",
+          overflow: "hidden",
         }}
       >
-        {/* Operator selector */}
-        <OperatorSelector
-          operators={operators}
-          selected={selected}
-          onSelect={(op) => {
-            setSelected(op);
-            setPin("");
-            setStatus("idle");
-            setErrorMsg("");
-          }}
-        />
+        <AnimatePresence mode="wait">
 
-        {/* PIN display */}
-        <div style={{ marginBottom: "28px" }}>
-          <p style={{
-            fontSize: "11px", fontWeight: 700,
-            color: "rgba(255,255,255,0.4)",
-            textTransform: "uppercase", letterSpacing: "0.12em",
-            marginBottom: "16px", textAlign: "center",
-          }}>
-            Enter PIN
-          </p>
+          {/* ── Step 1: Email ─────────────────────────────────────────────── */}
+          {step === "email" && (
+            <motion.div
+              key="email"
+              initial={{ opacity: 0, x: -24 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -24 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+            >
+              <form onSubmit={submitEmail} noValidate>
+                <p style={{
+                  fontSize: "clamp(13px, 3vw, 15px)",
+                  fontWeight: 700,
+                  color: "#f5f5f5",
+                  marginBottom: "clamp(16px, 4vw, 24px)",
+                }}>
+                  Sign in to your account
+                </p>
 
-          {/* PIN boxes with shake */}
-          <div
-            style={{
-              display: "flex", gap: "8px", justifyContent: "center",
-              animation: shake ? "shake 0.4s ease" : "none",
-            }}
-          >
-            {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-              <PinBox
-                key={i}
-                index={i}
-                filled={i < pin.length}
-                active={i === pin.length && status !== "error" && status !== "success"}
-                error={status === "error"}
-                success={status === "success"}
-              />
-            ))}
-          </div>
+                <div style={{ marginBottom: "clamp(12px, 3vw, 16px)" }}>
+                  <label style={{
+                    display: "block",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    color: "rgba(255,255,255,0.4)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.1em",
+                    marginBottom: "7px",
+                  }}>
+                    Email Address
+                  </label>
+                  <input
+                    ref={emailRef}
+                    type="email"
+                    value={email}
+                    onChange={e => { setEmail(e.target.value); setErrorMsg(""); }}
+                    placeholder="you@unclegrooming.com"
+                    autoComplete="email"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    style={{
+                      width: "100%",
+                      padding: "clamp(10px, 2.5vw, 13px) clamp(12px, 3vw, 16px)",
+                      background: "#252f38",
+                      border: `1.5px solid ${errorMsg ? "#ef4444" : "#2d3840"}`,
+                      borderRadius: "10px",
+                      color: "#f5f5f5",
+                      fontSize: "clamp(14px, 3.5vw, 15px)",
+                      outline: "none",
+                      transition: "border-color 0.2s, box-shadow 0.2s",
+                      boxSizing: "border-box",
+                    }}
+                    onFocus={e => {
+                      e.target.style.borderColor = "#e2d609";
+                      e.target.style.boxShadow = "0 0 0 3px rgba(226,214,9,0.12)";
+                    }}
+                    onBlur={e => {
+                      e.target.style.borderColor = errorMsg ? "#ef4444" : "#2d3840";
+                      e.target.style.boxShadow = "none";
+                    }}
+                  />
+                  <AnimatePresence>
+                    {errorMsg && (
+                      <motion.p
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.18 }}
+                        role="alert"
+                        style={{
+                          fontSize: "12px",
+                          color: "#f87171",
+                          marginTop: "6px",
+                          animation: shake ? "shake 0.4s ease" : "none",
+                        }}
+                      >
+                        {errorMsg}
+                      </motion.p>
+                    )}
+                  </AnimatePresence>
+                </div>
 
-          {/* Error message */}
-          <AnimatePresence>
-            {errorMsg && (
-              <motion.p
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
+                <button
+                  type="submit"
+                  style={{
+                    width: "100%",
+                    padding: "clamp(11px, 2.8vw, 14px)",
+                    borderRadius: "9999px",
+                    background: "#e2d609",
+                    color: "#0f1317",
+                    fontSize: "clamp(13px, 3.2vw, 15px)",
+                    fontWeight: 800,
+                    border: "none",
+                    cursor: "pointer",
+                    boxShadow: "0 0 24px rgba(226,214,9,0.22)",
+                    transition: "all 0.2s ease",
+                    letterSpacing: "0.01em",
+                  }}
+                >
+                  Continue →
+                </button>
+              </form>
+            </motion.div>
+          )}
+
+          {/* ── Step 2: PIN ───────────────────────────────────────────────── */}
+          {step === "pin" && (
+            <motion.div
+              key="pin"
+              initial={{ opacity: 0, x: 24 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 24 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+            >
+              {/* Back row */}
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                marginBottom: "clamp(16px, 4vw, 24px)",
+              }}>
+                <button
+                  onClick={() => { setStep("email"); setPin(""); setStatus("idle"); setErrorMsg(""); }}
+                  aria-label="Back to email"
+                  style={{
+                    background: "none", border: "none",
+                    color: "rgba(255,255,255,0.4)",
+                    cursor: "pointer",
+                    fontSize: "clamp(16px, 4vw, 20px)",
+                    padding: "4px 6px",
+                    lineHeight: 1,
+                    borderRadius: "6px",
+                    transition: "color 0.15s",
+                    flexShrink: 0,
+                  }}
+                >
+                  ←
+                </button>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{
+                    fontSize: "clamp(12px, 3vw, 14px)",
+                    fontWeight: 700,
+                    color: "#f5f5f5",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {email}
+                  </div>
+                  <div style={{
+                    fontSize: "clamp(10px, 2.5vw, 12px)",
+                    color: "rgba(255,255,255,0.35)",
+                    marginTop: "1px",
+                  }}>
+                    Enter your 6-digit PIN
+                  </div>
+                </div>
+              </div>
+
+              {/* PIN boxes */}
+              <div
                 style={{
-                  textAlign: "center", marginTop: "12px",
-                  fontSize: "13px", color: "#f87171",
-                  fontWeight: 500,
+                  display: "flex",
+                  gap: "clamp(5px, 1.5vw, 8px)",
+                  justifyContent: "center",
+                  marginBottom: "clamp(12px, 3vw, 20px)",
+                  animation: shake ? "shake 0.4s ease" : "none",
                 }}
-                role="alert"
               >
-                {errorMsg}
-              </motion.p>
-            )}
-          </AnimatePresence>
-        </div>
+                {Array.from({ length: PIN_LENGTH }).map((_, i) => (
+                  <PinBox
+                    key={i}
+                    filled={i < pin.length}
+                    active={i === pin.length && status !== "error" && status !== "success"}
+                    error={status === "error"}
+                    success={status === "success"}
+                  />
+                ))}
+              </div>
 
-        {/* Numpad */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 72px)",
-          gap: "10px",
-          justifyContent: "center",
-        }}>
-          {NUMPAD.map(([digit, sub]) => (
-            <NumKey
-              key={digit}
-              label={digit}
-              sublabel={sub}
-              onPress={() => appendDigit(digit)}
-              disabled={isLoading || status === "success" || !selected}
-            />
-          ))}
+              {/* Error */}
+              <AnimatePresence>
+                {errorMsg && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.18 }}
+                    role="alert"
+                    style={{
+                      textAlign: "center",
+                      fontSize: "clamp(11px, 2.8vw, 13px)",
+                      color: "#f87171",
+                      fontWeight: 500,
+                      marginBottom: "clamp(10px, 2.5vw, 14px)",
+                    }}
+                  >
+                    {errorMsg}
+                  </motion.p>
+                )}
+              </AnimatePresence>
 
-          {/* Bottom row: clear | 0 | delete */}
-          <NumKey
-            label="C"
-            onPress={clearPin}
-            variant="clear"
-            disabled={isLoading || status === "success" || pin.length === 0}
-          />
-          <NumKey
-            label="0"
-            onPress={() => appendDigit("0")}
-            disabled={isLoading || status === "success" || !selected}
-          />
-          <NumKey
-            label="⌫"
-            onPress={deleteDigit}
-            variant="delete"
-            disabled={isLoading || status === "success" || pin.length === 0}
-          />
-        </div>
+              {/* Touch numpad — mobile only */}
+              {isMobile && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "clamp(6px, 1.8vw, 10px)" }}>
+                  {ROWS.map((row, ri) => (
+                    <div key={ri} style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "clamp(6px, 1.8vw, 10px)" }}>
+                      {row.map(([d, s]) => (
+                        <NumKey
+                          key={d}
+                          label={d}
+                          sub={s || undefined}
+                          onPress={() => addDigit(d)}
+                          disabled={loading || status === "success"}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                  {/* Bottom row */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "clamp(6px, 1.8vw, 10px)" }}>
+                    <NumKey label="C" onPress={clearAll} ghost disabled={loading || status === "success" || pin.length === 0} />
+                    <NumKey label="0" onPress={() => addDigit("0")} disabled={loading || status === "success"} />
+                    <NumKey label="⌫" onPress={delDigit} ghost disabled={loading || status === "success" || pin.length === 0} />
+                  </div>
+                </div>
+              )}
 
-        {/* Status hint */}
-        <p style={{
-          textAlign: "center", marginTop: "20px",
-          fontSize: "12px",
-          color: status === "success"
-            ? "#e2d609"
-            : "rgba(255,255,255,0.25)",
-          transition: "color 0.2s",
-        }}>
-          {status === "success"
-            ? "✓ Verified — entering…"
-            : selected
-            ? `${PIN_LENGTH - pin.length} digit${PIN_LENGTH - pin.length !== 1 ? "s" : ""} remaining`
-            : "Select your name above to begin"}
-        </p>
+              {/* Desktop hint */}
+              {!isMobile && (
+                <p style={{
+                  textAlign: "center",
+                  fontSize: "clamp(11px, 2.5vw, 12px)",
+                  color: "rgba(255,255,255,0.22)",
+                  marginTop: "4px",
+                }}>
+                  Type your PIN using the keyboard
+                </p>
+              )}
+
+              {/* Status line */}
+              <p style={{
+                textAlign: "center",
+                marginTop: "clamp(10px, 2.5vw, 14px)",
+                fontSize: "clamp(11px, 2.5vw, 12px)",
+                color: status === "success" ? "#e2d609" : "rgba(255,255,255,0.2)",
+                transition: "color 0.2s",
+                minHeight: "16px",
+              }}>
+                {status === "success" ? "✓ Verified — entering…"
+                  : loading ? "Verifying…"
+                  : pin.length < PIN_LENGTH
+                  ? `${PIN_LENGTH - pin.length} digit${PIN_LENGTH - pin.length !== 1 ? "s" : ""} remaining`
+                  : ""}
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
 
       {/* Shake keyframe */}
       <style>{`
         @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          15%       { transform: translateX(-6px); }
-          30%       { transform: translateX(6px); }
-          45%       { transform: translateX(-5px); }
-          60%       { transform: translateX(5px); }
-          75%       { transform: translateX(-3px); }
-          90%       { transform: translateX(3px); }
+          0%,100% { transform: translateX(0); }
+          15%      { transform: translateX(-7px); }
+          30%      { transform: translateX(7px); }
+          45%      { transform: translateX(-5px); }
+          60%      { transform: translateX(5px); }
+          75%      { transform: translateX(-3px); }
+          90%      { transform: translateX(3px); }
         }
       `}</style>
     </div>
