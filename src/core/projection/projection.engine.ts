@@ -64,15 +64,18 @@ export class ProjectionEngine {
       { queueBoardProjection },
       { barberLaneProjection },
       { transactionProjection },
+      { availabilityProjection },
     ] = await Promise.all([
       import("@/core/projection/queue-board.projection"),
       import("@/core/projection/barber-lane.projection"),
       import("@/core/projection/transaction.projection"),
+      import("@/core/projection/availability.projection"),
     ]);
 
     this.register(queueBoardProjection);
     this.register(barberLaneProjection);
     this.register(transactionProjection);
+    this.register(availabilityProjection);
   }
 
   // ── Subscription ────────────────────────────────────────────────────────────

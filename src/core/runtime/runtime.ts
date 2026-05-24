@@ -18,11 +18,17 @@
  * Write path: emit() → journalService.commitEvent() → projectionEngine.apply()
  */
 
-import type { RxDatabase }    from "rxdb";
-import { journalService }     from "@/core/journal/journal.service";
-import { projectionEngine }   from "@/core/projection/projection.engine";
-import type { AllEvents }     from "@/domain/events/event.definitions";
-import type { QueueBoardView } from "@/projections/queue-board.view";
+import type { RxDatabase }       from "rxdb";
+import { journalService }        from "@/core/journal/journal.service";
+import { projectionEngine }      from "@/core/projection/projection.engine";
+import { terminalIdentity }      from "@/core/terminal/terminal.identity";
+import { clockService }          from "@/core/clock/clock.service";
+import { sessionService }        from "@/core/session/session.service";
+import { syncEngine }            from "@/core/sync/sync.engine";
+import type { AllEvents }        from "@/domain/events/event.definitions";
+import type { ActiveSession }    from "@/core/session/session.types";
+import type { CommitResult }     from "@/core/journal/journal.service";
+import type { QueueBoardView }   from "@/projections/queue-board.view";
 
 // ─── Runtime ──────────────────────────────────────────────────────────────────
 
@@ -34,10 +40,12 @@ export class Runtime {
   async init(db: RxDatabase): Promise<void> {
     if (this.initialized) return;
 
+    terminalIdentity.init();
+
     // Wire journal to database
     journalService.setDatabase(db);
 
-    // Register all core projections (QueueBoard, BarberLane, Transaction)
+    // Register all core projections (QueueBoard, BarberLane, Transaction, Availability)
     await projectionEngine.registerCoreProjections();
 
     this.initialized = true;
@@ -55,19 +63,47 @@ export class Runtime {
    * Emit a domain event.
    * Flow: commitEvent() → journal (RxDB) → projectionEngine.apply() → notify subscribers
    *
-   * Returns the updated QueueBoardView for backward compatibility.
-   * Screens should use hooks (useQueueBoard etc.) for reactive updates.
+   * Returns CommitResult — callers can handle rejections properly.
+   * Pass session explicitly or omit to auto-resolve from sessionService.
    */
-  async emit(event: AllEvents): Promise<QueueBoardView | undefined> {
+  async emit(
+    event: AllEvents,
+    session?: ActiveSession | null
+  ): Promise<CommitResult> {
     this.ensureInitialized();
 
+    const activeSession =
+      session === undefined ? sessionService.getActiveSession() : session;
+
     // 1. Persist to journal (enforces all 5 invariants)
-    const result = await journalService.appendEvent(event);
+    const result = await journalService.commitEvent(event, activeSession ?? undefined);
 
-    // 2. Update projections synchronously
-    projectionEngine.apply(event);
+    if (!result.success) {
+      return result;
+    }
 
-    return projectionEngine.getState<QueueBoardView>("QUEUE_BOARD_VIEW");
+    // 2. Advance local HLC to stay ahead of committed timestamp
+    clockService.receive(result.hlc_timestamp);
+
+    // 3. Update projections synchronously
+    projectionEngine.apply({
+      ...event,
+      metadata: { ...event.metadata, hlc_timestamp: result.hlc_timestamp },
+    });
+
+    // 4. Notify sync engine — triggers immediate push attempt
+    syncEngine.notifyPending();
+
+    return result;
+  }
+
+  /** Start background sync loop (MODULE_PRIORITY P4.1 step 5) */
+  startSync(): void {
+    syncEngine.start();
+  }
+
+  stopSync(): void {
+    syncEngine.stop();
   }
 
   // ── Bootstrap ────────────────────────────────────────────────────────────────

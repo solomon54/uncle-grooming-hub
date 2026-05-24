@@ -30,6 +30,8 @@ import { useSession }                    from "@/ui/hooks/useSession";
 import { TopBar }                        from "@/ui/components/shell/TopBar";
 import { Badge }                         from "@/ui/components/primitives/Badge";
 import { SyncIndicator }                 from "@/ui/components/primitives/SyncIndicator";
+import { useSyncStatus }                 from "@/ui/hooks/useSyncStatus";
+import { issueQueueToken }               from "@/core/queue/queue-token";
 import {
   checkInCustomer,
   callCustomer,
@@ -39,17 +41,6 @@ import {
 } from "@/core/actions/queue.actions";
 import type { QueueEntryView }  from "@/projections/queue-board.view";
 import type { BarberLaneView }  from "@/projections/barber-lane.view";
-
-// ─── Queue Token Generator ────────────────────────────────────────────────────
-
-function generateQueueToken(existingCount: number): string {
-  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const today   = new Date();
-  const dayIdx  = today.getDay(); // 0–6
-  const letter  = letters[dayIdx % letters.length];
-  const seq     = String((existingCount + 1) % 100).padStart(2, "0");
-  return `${letter}-${seq}`;
-}
 
 // ─── Status badge variant map ─────────────────────────────────────────────────
 
@@ -143,6 +134,7 @@ function CheckInForm({ barbers, totalInQueue, sessionId, onSuccess }: CheckInFor
   const [barberId,  setBarberId]  = useState("");
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState("");
+  const [lastToken, setLastToken] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,18 +144,23 @@ function CheckInForm({ barbers, totalInQueue, sessionId, onSuccess }: CheckInFor
     setError("");
 
     try {
-      const token = generateQueueToken(totalInQueue);
-      await checkInCustomer({
+      const token = issueQueueToken();
+      const result = await checkInCustomer({
         aggregateId:       crypto.randomUUID(),
-        aggregateVersion:  1,
         sessionId,
         customerUuid:      crypto.randomUUID(),
         preferredBarberId: barberId || null,
         checkinMethod:     "walk-in",
         customerName:      name.trim(),
         queueToken:        token,
-      } as Parameters<typeof checkInCustomer>[0]);
+      });
 
+      if (result && "success" in result && !result.success) {
+        setError(`Check-in rejected: ${result.reason}`);
+        return;
+      }
+
+      setLastToken(token);
       setName("");
       setBarberId("");
       onSuccess();
@@ -224,6 +221,21 @@ function CheckInForm({ barbers, totalInQueue, sessionId, onSuccess }: CheckInFor
         <p style={{ fontSize: "13px", color: "#ef4444", margin: 0 }}>{error}</p>
       )}
 
+      {lastToken && (
+        <div style={{
+          padding: "14px 16px", borderRadius: "12px",
+          background: "rgba(226,214,9,0.1)", border: "1px solid rgba(226,214,9,0.35)",
+          textAlign: "center",
+        }}>
+          <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", marginBottom: "4px" }}>
+            Queue token — tell the customer
+          </div>
+          <div style={{ fontSize: "28px", fontWeight: 900, color: "#e2d609", letterSpacing: "0.05em" }}>
+            {lastToken}
+          </div>
+        </div>
+      )}
+
       <button
         type="submit"
         disabled={loading}
@@ -261,12 +273,15 @@ function SelectedPanel({ entry, barbers, sessionId, onClose }: SelectedPanelProp
     if (!canCall || loading) return;
     setLoading("call");
     try {
-      await callCustomer({
-        aggregateId:      entry.queue_entry_id,
-        aggregateVersion: 2,
+      const result = await callCustomer({
+        aggregateId: entry.queue_entry_id,
         sessionId,
-        barberId:         entry.preferred_barber_id ?? "",
+        barberId:    entry.preferred_barber_id ?? "",
       });
+      if (result && "success" in result && !result.success) {
+        console.warn("Call rejected:", result.reason);
+        return;
+      }
       onClose();
     } finally { setLoading(null); }
   };
@@ -276,10 +291,9 @@ function SelectedPanel({ entry, barbers, sessionId, onClose }: SelectedPanelProp
     setLoading("cancel");
     try {
       await cancelReservation({
-        aggregateId:      entry.queue_entry_id,
-        aggregateVersion: 2,
+        aggregateId: entry.queue_entry_id,
         sessionId,
-        reasonCode:       "CUSTOMER_REQUEST",
+        reasonCode:  "CUSTOMER_REQUEST",
       });
       onClose();
     } finally { setLoading(null); }
@@ -378,6 +392,7 @@ export default function CashierScreen() {
   const { view: queue }   = useQueueBoard();
   const { view: lanes }   = useBarberLane();
   const { session }       = useSession();
+  const sync              = useSyncStatus();
   const [selected, setSelected] = useState<QueueEntryView | null>(null);
 
   const allEntries = [
@@ -421,7 +436,7 @@ export default function CashierScreen() {
                 {queue?.total_waiting ?? 0}
               </span>
             </div>
-            <SyncIndicator state="verified" compact />
+            <SyncIndicator state={sync.state} compact />
           </div>
 
           {/* Reservations section */}

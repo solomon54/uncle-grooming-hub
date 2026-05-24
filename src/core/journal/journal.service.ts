@@ -70,7 +70,7 @@ type JournalDoc = {
   payload:           Record<string, unknown>;
   metadata:          Record<string, unknown>;
   hlc:               string;
-  synced:            boolean;
+  is_synced:         boolean;
 };
 
 // ─── Journal Service ──────────────────────────────────────────────────────────
@@ -179,7 +179,59 @@ export class JournalService {
         actor_id:    session?.actor_id ?? "SYSTEM",
       },
       hlc,
-      synced: false, // Sync engine marks true after cloud ACK
+      is_synced: false, // Sync engine marks true after cloud ACK (renamed from 'synced' — RxDB SC17)
+    });
+
+    return { success: true, event_id: event.event_id, hlc_timestamp: hlc };
+  }
+
+  /**
+   * Ingest events received from cloud pull replication.
+   * Skips CLOUD_AUTHORITY guard — these events ARE the cloud authority.
+   * Marks is_synced: true — already canonical in cloud.
+   */
+  public async ingestCloudEvent(event: AllEvents): Promise<CommitResult> {
+    if (!this.collection) {
+      throw new Error("[JournalService] Not initialized. Call setDatabase() first.");
+    }
+
+    // Idempotency — already have it
+    const existing = await this.collection
+      .findOne({ selector: { event_id: event.event_id } })
+      .exec();
+    if (existing) {
+      return { success: true, event_id: event.event_id, hlc_timestamp: existing.hlc };
+    }
+
+    // Version check
+    const latest = await this.collection
+      .findOne({
+        selector: { aggregate_id: event.aggregate_id },
+        sort:     [{ aggregate_version: "desc" }],
+      })
+      .exec();
+
+    const currentVersion = latest ? latest.aggregate_version : 0;
+    if (event.aggregate_version !== currentVersion + 1) {
+      return { success: false, reason: "VERSION_CONFLICT" };
+    }
+
+    const hlc = (event.metadata as Record<string, unknown>).hlc_timestamp as string ?? clockService.tick();
+    clockService.receive(hlc);
+
+    await this.collection.insert({
+      event_id:          event.event_id,
+      aggregate_id:      event.aggregate_id,
+      aggregate_version: event.aggregate_version,
+      event_type:        event.event_type,
+      payload:           event.payload,
+      metadata: {
+        ...event.metadata,
+        terminal_id: (event.metadata as Record<string, unknown>).terminal_id ?? "CLOUD",
+        actor_id:    "CLOUD",
+      },
+      hlc,
+      is_synced: true,
     });
 
     return { success: true, event_id: event.event_id, hlc_timestamp: hlc };
@@ -239,7 +291,7 @@ export class JournalService {
 
     const docs = await this.collection
       .find({
-        selector: { synced: false },
+        selector: { is_synced: false },
         sort:     [{ hlc: "asc" }],
         limit,
       })
@@ -256,7 +308,33 @@ export class JournalService {
       .find({ selector: { event_id: { $in: eventIds } } })
       .exec();
 
-    await Promise.all(docs.map(doc => doc.patch({ synced: true })));
+    await Promise.all(docs.map(doc => doc.patch({ is_synced: true })));
+  }
+
+  /**
+   * Next aggregate_version for optimistic concurrency (ECS §2.3).
+   * Action creators use this so callers don't need to track versions manually.
+   */
+  public async getNextAggregateVersion(aggregateId: string): Promise<number> {
+    if (!this.collection) return 1;
+
+    const latest = await this.collection
+      .findOne({
+        selector: { aggregate_id: aggregateId },
+        sort:     [{ aggregate_version: "desc" }],
+      })
+      .exec();
+
+    return latest ? latest.aggregate_version + 1 : 1;
+  }
+
+  /** Count events pending cloud sync — used by SyncEngine status */
+  public async countUnsynced(): Promise<number> {
+    if (!this.collection) return 0;
+    const docs = await this.collection
+      .find({ selector: { is_synced: false } })
+      .exec();
+    return docs.length;
   }
 
   public async clear(): Promise<void> {

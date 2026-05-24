@@ -35,6 +35,7 @@ export const journalSchema: RxJsonSchema<{
   payload:           Record<string, unknown>;
   metadata:          Record<string, unknown>;
   hlc:               string;
+  is_synced:         boolean;
 }> = {
   title:      "journal",
   version:    0,
@@ -87,6 +88,11 @@ export const journalSchema: RxJsonSchema<{
       type:      "string",
       maxLength: HLC_MAX_LENGTH,
     },
+
+    // Sync tracking — renamed from 'synced' (RxDB SC17 reserved word)
+    is_synced: {
+      type: "boolean",
+    },
   },
 
   required: [
@@ -97,8 +103,8 @@ export const journalSchema: RxJsonSchema<{
     "payload",
     "metadata",
     "hlc",
+    "is_synced",
   ],
 
-  // Index on hlc enables efficient getEventsAfter() queries (TAS §3)
-  indexes: ["hlc"],
+  indexes: ["hlc", "is_synced"],
 };

@@ -12,6 +12,7 @@
  *   - Real HLC timestamps via ClockService (TAS §4)
  *   - Terminal attribution via TerminalIdentityService (TAS §1.2)
  *   - Idempotent event_id via crypto.randomUUID()
+ *   - Auto-resolved aggregate_version via journalService (optional override)
  *
  * Actions do NOT enforce business preconditions (e.g. "barber must be AVAILABLE").
  * Precondition enforcement is the responsibility of the calling UI layer,
@@ -19,6 +20,7 @@
  */
 
 import { runtime }          from "@/core/runtime/runtime";
+import { journalService }   from "@/core/journal/journal.service";
 import { clockService }     from "@/core/clock/clock.service";
 import { terminalIdentity } from "@/core/terminal/terminal.identity";
 
@@ -36,10 +38,6 @@ import type {
 
 // ─── Metadata Factory ─────────────────────────────────────────────────────────
 
-/**
- * Constructs the standard event metadata block.
- * session_id is provided by the caller (from active TerminalSession).
- */
 function buildMetadata(sessionId: string) {
   return {
     session_id:    sessionId,
@@ -52,24 +50,28 @@ function buildMetadata(sessionId: string) {
 
 export interface CheckInCustomerParams {
   aggregateId:        string;
-  aggregateVersion:   number;
+  /** Optional — auto-resolved from journal if omitted */
+  aggregateVersion?:  number;
   sessionId:          string;
   customerUuid:       string;
   preferredBarberId:  string | null;
   checkinMethod?:     "walk-in" | "remote";
   reservationId?:     string;
-  /** Customer first name — stored for display (initials derived by projection) */
   customerName?:      string;
   /** Queue token e.g. "A-07" — CXS v1.1 §3.3 */
   queueToken?:        string;
 }
 
 export async function checkInCustomer(params: CheckInCustomerParams) {
+  const aggregateVersion =
+    params.aggregateVersion ??
+    (await journalService.getNextAggregateVersion(params.aggregateId));
+
   const event: CustomerCheckedInEvent = {
     event_id:          crypto.randomUUID(),
     event_type:        "CUSTOMER_CHECKED_IN",
     aggregate_id:      params.aggregateId,
-    aggregate_version: params.aggregateVersion,
+    aggregate_version: aggregateVersion,
     payload: {
       customer_uuid:       params.customerUuid,
       preferred_barber_id: params.preferredBarberId ?? "",
@@ -87,18 +89,23 @@ export async function checkInCustomer(params: CheckInCustomerParams) {
 // ─── EVENT 03 — CUSTOMER_CALLED_TO_CHAIR ─────────────────────────────────────
 
 export interface CallCustomerParams {
-  aggregateId:      string;
-  aggregateVersion: number;
-  sessionId:        string;
-  barberId:         string;
+  aggregateId:       string;
+  /** Optional — auto-resolved from journal if omitted */
+  aggregateVersion?: number;
+  sessionId:         string;
+  barberId:          string;
 }
 
 export async function callCustomer(params: CallCustomerParams) {
+  const aggregateVersion =
+    params.aggregateVersion ??
+    (await journalService.getNextAggregateVersion(params.aggregateId));
+
   const event: CustomerCalledToChairEvent = {
     event_id:          crypto.randomUUID(),
     event_type:        "CUSTOMER_CALLED_TO_CHAIR",
     aggregate_id:      params.aggregateId,
-    aggregate_version: params.aggregateVersion,
+    aggregate_version: aggregateVersion,
     payload: {
       queue_entry_id: params.aggregateId,
       barber_id:      params.barberId,
@@ -112,18 +119,23 @@ export async function callCustomer(params: CallCustomerParams) {
 // ─── EVENT 04 — SERVICE_ENGAGED ───────────────────────────────────────────────
 
 export interface StartServiceParams {
-  aggregateId:      string;
-  aggregateVersion: number;
-  sessionId:        string;
-  priceSnapshotId:  string;
+  aggregateId:       string;
+  /** Optional — auto-resolved from journal if omitted */
+  aggregateVersion?: number;
+  sessionId:         string;
+  priceSnapshotId:   string;
 }
 
 export async function startService(params: StartServiceParams) {
+  const aggregateVersion =
+    params.aggregateVersion ??
+    (await journalService.getNextAggregateVersion(params.aggregateId));
+
   const event: ServiceEngagedEvent = {
     event_id:          crypto.randomUUID(),
     event_type:        "SERVICE_ENGAGED",
     aggregate_id:      params.aggregateId,
-    aggregate_version: params.aggregateVersion,
+    aggregate_version: aggregateVersion,
     payload: {
       price_snapshot_id: params.priceSnapshotId,
     },
@@ -136,17 +148,22 @@ export async function startService(params: StartServiceParams) {
 // ─── EVENT 05 — SERVICE_COMPLETED ────────────────────────────────────────────
 
 export interface CompleteServiceParams {
-  aggregateId:      string;
-  aggregateVersion: number;
-  sessionId:        string;
+  aggregateId:       string;
+  /** Optional — auto-resolved from journal if omitted */
+  aggregateVersion?: number;
+  sessionId:         string;
 }
 
 export async function completeService(params: CompleteServiceParams) {
+  const aggregateVersion =
+    params.aggregateVersion ??
+    (await journalService.getNextAggregateVersion(params.aggregateId));
+
   const event: ServiceCompletedEvent = {
     event_id:          crypto.randomUUID(),
     event_type:        "SERVICE_COMPLETED",
     aggregate_id:      params.aggregateId,
-    aggregate_version: params.aggregateVersion,
+    aggregate_version: aggregateVersion,
     payload:           {},
     metadata:          buildMetadata(params.sessionId),
   };
@@ -157,20 +174,24 @@ export async function completeService(params: CompleteServiceParams) {
 // ─── EVENT 12 — QUEUE_TRANSFER_CONSENTED ─────────────────────────────────────
 
 export interface TransferQueueParams {
-  aggregateId:           string;
-  aggregateVersion:      number;
-  sessionId:             string;
-  originatingBarberId:   string;
-  receivingBarberId:     string;
+  aggregateId:              string;
+  aggregateVersion?:        number;
+  sessionId:                string;
+  originatingBarberId:      string;
+  receivingBarberId:        string;
   customerConsentConfirmed: boolean;
 }
 
 export async function transferQueue(params: TransferQueueParams) {
+  const aggregateVersion =
+    params.aggregateVersion ??
+    (await journalService.getNextAggregateVersion(params.aggregateId));
+
   const event: QueueTransferConsentedEvent = {
     event_id:          crypto.randomUUID(),
     event_type:        "QUEUE_TRANSFER_CONSENTED",
     aggregate_id:      params.aggregateId,
-    aggregate_version: params.aggregateVersion,
+    aggregate_version: aggregateVersion,
     payload: {
       originating_barber_id:      params.originatingBarberId,
       receiving_barber_id:        params.receivingBarberId,
@@ -183,13 +204,11 @@ export async function transferQueue(params: TransferQueueParams) {
 }
 
 // ─── EVENT 19 — APPOINTMENT_RESERVED (Cloud Authority) ───────────────────────
-// NOTE: This event is Cloud Authority Only (ECS §2.4).
-// The local terminal receives it via sync — it does NOT emit it.
-// This action exists only for testing and cloud-side emission.
+// NOTE: Cloud Authority Only — local terminal receives via sync, never emits.
 
 export interface ReserveAppointmentParams {
   aggregateId:       string;
-  aggregateVersion:  number;
+  aggregateVersion?: number;
   sessionId:         string;
   customerUuid:      string;
   preferredBarberId: string | null;
@@ -197,11 +216,15 @@ export interface ReserveAppointmentParams {
 }
 
 export async function reserveAppointment(params: ReserveAppointmentParams) {
+  const aggregateVersion =
+    params.aggregateVersion ??
+    (await journalService.getNextAggregateVersion(params.aggregateId));
+
   const event: AppointmentReservedEvent = {
     event_id:          crypto.randomUUID(),
     event_type:        "APPOINTMENT_RESERVED",
     aggregate_id:      params.aggregateId,
-    aggregate_version: params.aggregateVersion,
+    aggregate_version: aggregateVersion,
     payload: {
       customer_uuid:       params.customerUuid,
       preferred_barber_id: params.preferredBarberId ?? "",
@@ -216,18 +239,22 @@ export async function reserveAppointment(params: ReserveAppointmentParams) {
 // ─── EVENT 20 — RESERVATION_CANCELLED ────────────────────────────────────────
 
 export interface CancelReservationParams {
-  aggregateId:      string;
-  aggregateVersion: number;
-  sessionId:        string;
-  reasonCode:       string;
+  aggregateId:       string;
+  aggregateVersion?: number;
+  sessionId:         string;
+  reasonCode:        string;
 }
 
 export async function cancelReservation(params: CancelReservationParams) {
+  const aggregateVersion =
+    params.aggregateVersion ??
+    (await journalService.getNextAggregateVersion(params.aggregateId));
+
   const event: ReservationCancelledEvent = {
     event_id:          crypto.randomUUID(),
     event_type:        "RESERVATION_CANCELLED",
     aggregate_id:      params.aggregateId,
-    aggregate_version: params.aggregateVersion,
+    aggregate_version: aggregateVersion,
     payload: {
       reason_code: params.reasonCode,
     },
@@ -240,18 +267,22 @@ export async function cancelReservation(params: CancelReservationParams) {
 // ─── EVENT 21 — SERVICE_INTENT_ADDED ─────────────────────────────────────────
 
 export interface AddServiceIntentParams {
-  aggregateId:      string;
-  aggregateVersion: number;
-  sessionId:        string;
-  serviceId:        string;
+  aggregateId:       string;
+  aggregateVersion?: number;
+  sessionId:         string;
+  serviceId:         string;
 }
 
 export async function addServiceIntent(params: AddServiceIntentParams) {
+  const aggregateVersion =
+    params.aggregateVersion ??
+    (await journalService.getNextAggregateVersion(params.aggregateId));
+
   const event: ServiceIntentAddedEvent = {
     event_id:          crypto.randomUUID(),
     event_type:        "SERVICE_INTENT_ADDED",
     aggregate_id:      params.aggregateId,
-    aggregate_version: params.aggregateVersion,
+    aggregate_version: aggregateVersion,
     payload: {
       service_id: params.serviceId,
     },
@@ -264,18 +295,22 @@ export async function addServiceIntent(params: AddServiceIntentParams) {
 // ─── EVENT 22 — SERVICE_INTENT_REMOVED ───────────────────────────────────────
 
 export interface RemoveServiceIntentParams {
-  aggregateId:      string;
-  aggregateVersion: number;
-  sessionId:        string;
-  serviceId:        string;
+  aggregateId:       string;
+  aggregateVersion?: number;
+  sessionId:         string;
+  serviceId:         string;
 }
 
 export async function removeServiceIntent(params: RemoveServiceIntentParams) {
+  const aggregateVersion =
+    params.aggregateVersion ??
+    (await journalService.getNextAggregateVersion(params.aggregateId));
+
   const event: ServiceIntentRemovedEvent = {
     event_id:          crypto.randomUUID(),
     event_type:        "SERVICE_INTENT_REMOVED",
     aggregate_id:      params.aggregateId,
-    aggregate_version: params.aggregateVersion,
+    aggregate_version: aggregateVersion,
     payload: {
       service_id: params.serviceId,
     },

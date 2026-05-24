@@ -141,6 +141,9 @@ export function RuntimeProvider({ children }: { children: React.ReactNode }) {
       setPhase("replay");
       await runtime.replayFromStart();
 
+      // Start background sync loop (MODULE_PRIORITY P4.1 step 5)
+      runtime.startSync();
+
       setPhase("ready");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";

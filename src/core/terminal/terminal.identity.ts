@@ -29,6 +29,16 @@ export class TerminalIdentityService {
   private _terminalId: string | null = null;
 
   /**
+   * Bootstrap hook — call once during runtime init (MODULE_PRIORITY P1.3).
+   * Materializes the terminal_id before the first event is emitted.
+   * Safe to call server-side (no-op).
+   */
+  init(): void {
+    if (typeof window === "undefined") return;
+    void this.terminalId;
+  }
+
+  /**
    * Returns the stable terminal_id for this device.
    * Generates and persists one on first call.
    *

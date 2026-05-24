@@ -49,7 +49,7 @@ export async function getDatabase(): Promise<RxDatabase> {
 
     try {
       const db = await createRxDatabase({
-        name:            "ugh_local_journal_v4",
+        name:            "ugh_local_journal_v5",
         storage,
         ignoreDuplicate: true,
       });

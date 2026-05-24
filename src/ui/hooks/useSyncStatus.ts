@@ -7,29 +7,34 @@
  * Specification: MODULE_PRIORITY.md P5.5
  *                PRD §10.4 — State Transparency (Local_Only / Transmitting / Cloud_Verified)
  *                ui-standards.md §5.4 — Sync Indicator
+ *                AGENT.md §8 — Sync Engine Rules
  *
- * Phase 1: Returns static "verified" state.
- * Phase 4.3: Wire to sync engine when built.
- *
- * @todo Phase 4.3 — Connect to sync.engine.ts observable
+ * Subscribes to syncEngine status updates — re-renders on every state change.
  */
 
 "use client";
 
-import { useState } from "react";
-import type { SyncState } from "@/ui/components/primitives/SyncIndicator";
+import { useEffect, useState } from "react";
+import { syncEngine }          from "@/core/sync/sync.engine";
+import type { SyncEngineStatus } from "@/core/sync/sync.types";
 
-export interface SyncStatus {
-  state:        SyncState;
-  pendingCount: number;
-}
+export type { SyncEngineStatus as SyncStatus };
 
-export function useSyncStatus(): SyncStatus {
-  // Phase 1 placeholder — always verified until sync engine is built
-  const [status] = useState<SyncStatus>({
-    state:        "verified",
-    pendingCount: 0,
-  });
+export function useSyncStatus(): SyncEngineStatus {
+  const [status, setStatus] = useState<SyncEngineStatus>(
+    () => syncEngine.getStatus()
+  );
+
+  useEffect(() => {
+    // Sync immediately in case status changed before mount
+    setStatus(syncEngine.getStatus());
+
+    const unsubscribe = syncEngine.subscribe(() => {
+      setStatus(syncEngine.getStatus());
+    });
+
+    return unsubscribe;
+  }, []);
 
   return status;
 }

@@ -31,8 +31,8 @@ export const customerProfileSchema: RxJsonSchema<Record<string, unknown>> = {
       required: ["session_id", "hlc_timestamp"],
     },
     hlc:    { type: "string", maxLength: 128 },
-    synced: { type: "boolean" },
+    is_synced: { type: "boolean" },
   },
-  required: ["event_id", "aggregate_id", "aggregate_version", "event_type", "payload", "metadata", "hlc", "synced"],
-  indexes:  ["hlc", "aggregate_id", "synced"],
+  required: ["event_id", "aggregate_id", "aggregate_version", "event_type", "payload", "metadata", "hlc", "is_synced"],
+  indexes:  ["hlc", "aggregate_id", "is_synced"],
 };
