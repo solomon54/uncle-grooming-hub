@@ -60,6 +60,8 @@ export interface CheckInCustomerParams {
   customerName?:      string;
   /** Queue token e.g. "A-07" — CXS v1.1 §3.3 */
   queueToken?:        string;
+  /** Phone or contact handle — optional, for queue notifications (CXS v1.1 §6) */
+  contactHandle?:     string;
 }
 
 export async function checkInCustomer(params: CheckInCustomerParams) {
@@ -79,6 +81,7 @@ export async function checkInCustomer(params: CheckInCustomerParams) {
       reservation_id:      params.reservationId,
       customer_name:       params.customerName,
       queue_token:         params.queueToken,
+      contact_handle:      params.contactHandle,
     } as CustomerCheckedInEvent["payload"] & Record<string, unknown>,
     metadata: buildMetadata(params.sessionId),
   };

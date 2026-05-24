@@ -6,18 +6,18 @@
  *
  * Specification: AMS v1.3 — Concierge & Check-in capabilities
  *                IMS v1.1 — Client Intake + Queue Manager screens
+ *                CXS v1.1 §1 — Walk-in customer flow
+ *                CXS v1.1 §4 — Service selection at check-in
  *                ui-standards.md §7.2 — Cashier Screen layout
- *                AGENT.md §6 — UI Rules
- *                TAS §13 — Customer Preference Sovereignty
- *                CXS v1.1 §3.3 — Queue Token system
  *
- * READS FROM: useQueueBoard(), useBarberLane(), useSession()
- * EMITS VIA:  queue.actions (Events 01, 03, 12, 20, 21, 22)
+ * Two sub-screens (tab-switched):
+ *   1. CHECK-IN — collect name, barber, contact, services → EVENT 01 + EVENT 21
+ *   2. QUEUE    — live queue list, call to chair (EVENT 03), no-show (EVENT 20)
  *
- * INVARIANTS enforced in UI:
- *   - "Call to Chair" disabled if preferred barber not AVAILABLE
- *   - Intent add/remove disabled after is_intent_locked (EVENT 04)
- *   - No automatic queue reordering
+ * Barber list: shows ALL roster barbers with live status from BarberLane projection.
+ * Barbers appear OFFLINE until they log in and toggle available (EVENT 02).
+ * Cashier can still assign a customer to an OFFLINE barber — they just can't be
+ * called until the barber becomes AVAILABLE.
  */
 
 "use client";
@@ -30,8 +30,7 @@ import { useSession }                    from "@/ui/hooks/useSession";
 import { TopBar }                        from "@/ui/components/shell/TopBar";
 import { Badge }                         from "@/ui/components/primitives/Badge";
 import { SyncIndicator }                 from "@/ui/components/primitives/SyncIndicator";
-import { useSyncStatus }                 from "@/ui/hooks/useSyncStatus";
-import { issueQueueToken }               from "@/core/queue/queue-token";
+import { sessionService }                from "@/core/session/session.service";
 import {
   checkInCustomer,
   callCustomer,
@@ -39,19 +38,297 @@ import {
   addServiceIntent,
   removeServiceIntent,
 } from "@/core/actions/queue.actions";
-import type { QueueEntryView }  from "@/projections/queue-board.view";
-import type { BarberLaneView }  from "@/projections/barber-lane.view";
+import { generateQueueToken }            from "@/core/queue/queue-token";
+import type { QueueEntryView }           from "@/projections/queue-board.view";
+import type { BarberLaneView }           from "@/projections/barber-lane.view";
 
-// ─── Status badge variant map ─────────────────────────────────────────────────
+// ─── Service catalog (Phase 1 — hardcoded, Phase 2 from Admin price registry) ─
 
-function statusVariant(status: QueueEntryView["status"]) {
-  const map: Record<string, "waiting" | "reserved" | "called" | "in-service"> = {
-    WAITING:    "waiting",
-    RESERVED:   "reserved",
-    CALLED:     "called",
-    IN_SERVICE: "in-service",
+const SERVICES = [
+  { id: "classic_cut",   name: "Classic Cut",       name_am: "ክላሲክ ቅጥ",    price: 350 },
+  { id: "premium_cut",   name: "Premium Cut",        name_am: "ፕሪሚየም ቅጥ",   price: 500 },
+  { id: "beard_groom",   name: "Beard Grooming",     name_am: "ጢም ማስተካከያ",  price: 250 },
+  { id: "cut_beard",     name: "Cut & Beard Combo",  name_am: "ቅጥ እና ጢም",   price: 700 },
+  { id: "head_shave",    name: "Head Shave",         name_am: "ራስ ምላጭ",     price: 300 },
+  { id: "kids_cut",      name: "Kids Cut",           name_am: "የልጆች ቅጥ",    price: 200 },
+] as const;
+
+type ServiceId = typeof SERVICES[number]["id"];
+
+// ─── Tab type ─────────────────────────────────────────────────────────────────
+
+type Tab = "checkin" | "queue";
+
+// ─── Barber status badge ──────────────────────────────────────────────────────
+
+function BarberStatusDot({ status }: { status: BarberLaneView["status"] }) {
+  const color = {
+    AVAILABLE:  "#10b981",
+    CALLED:     "#f59e0b",
+    IN_SERVICE: "#10b981",
+    ON_BREAK:   "#6b7280",
+    OFFLINE:    "#374151",
+  }[status] ?? "#374151";
+
+  return (
+    <span style={{
+      display: "inline-block",
+      width: "7px", height: "7px",
+      borderRadius: "50%",
+      background: color,
+      flexShrink: 0,
+    }} />
+  );
+}
+
+// ─── Check-In Form ────────────────────────────────────────────────────────────
+
+interface CheckInFormProps {
+  barbers:    BarberLaneView[];
+  rosterBarbers: { actor_id: string; name: string; barber_id?: string }[];
+  totalToday: number;
+  sessionId:  string;
+  onSuccess:  (token: string) => void;
+}
+
+function CheckInForm({ barbers, rosterBarbers, totalToday, sessionId, onSuccess }: CheckInFormProps) {
+  const [name,       setName]       = useState("");
+  const [barberId,   setBarberId]   = useState("");
+  const [contact,    setContact]    = useState("");
+  const [intents,    setIntents]    = useState<ServiceId[]>([]);
+  const [loading,    setLoading]    = useState(false);
+  const [error,      setError]      = useState("");
+  const [lastToken,  setLastToken]  = useState<string | null>(null);
+
+  const toggleService = (id: ServiceId) => {
+    setIntents(prev =>
+      prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
+    );
   };
-  return map[status] ?? "neutral" as "waiting";
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) { setError("Customer name is required"); return; }
+    setLoading(true);
+    setError("");
+
+    try {
+      const aggregateId = crypto.randomUUID();
+      const token       = generateQueueToken(totalToday);
+
+      await checkInCustomer({
+        aggregateId,
+        aggregateVersion:  1,
+        sessionId,
+        customerUuid:      crypto.randomUUID(),
+        preferredBarberId: barberId || null,
+        checkinMethod:     "walk-in",
+        customerName:      name.trim(),
+        queueToken:        token,
+        contactHandle:     contact.trim() || undefined,
+      } as Parameters<typeof checkInCustomer>[0]);
+
+      // Add service intents
+      for (let i = 0; i < intents.length; i++) {
+        await addServiceIntent({
+          aggregateId,
+          aggregateVersion: i + 2,
+          sessionId,
+          serviceId: intents[i],
+        });
+      }
+
+      setLastToken(token);
+      setName(""); setBarberId(""); setContact(""); setIntents([]);
+      onSuccess(token);
+    } catch (err) {
+      setError("Check-in failed — please try again");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Merge roster barbers with live lane status
+  const allBarbers = rosterBarbers.map(rb => {
+    const lane = barbers.find(l => l.barber_id === rb.barber_id);
+    return {
+      id:     rb.barber_id ?? rb.actor_id,
+      name:   rb.name,
+      status: lane?.status ?? "OFFLINE" as BarberLaneView["status"],
+    };
+  });
+
+  return (
+    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+
+      {/* Success flash */}
+      <AnimatePresence>
+        {lastToken && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            style={{
+              padding: "12px 16px", borderRadius: "10px",
+              background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}
+          >
+            <span style={{ fontSize: "13px", color: "#10b981", fontWeight: 600 }}>
+              ✓ Checked in — Token:
+            </span>
+            <span style={{ fontSize: "22px", fontWeight: 900, color: "#e2d609" }}>
+              {lastToken}
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Name */}
+      <div>
+        <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "7px" }}>
+          Customer Name *
+        </label>
+        <input
+          type="text"
+          value={name}
+          onChange={e => { setName(e.target.value); setError(""); setLastToken(null); }}
+          placeholder="First name"
+          autoComplete="off"
+          style={{
+            width: "100%", padding: "11px 14px",
+            background: "#252f38", border: `1.5px solid ${error ? "#ef4444" : "#2d3840"}`,
+            borderRadius: "10px", color: "#f5f5f5", fontSize: "15px", outline: "none",
+            boxSizing: "border-box",
+          }}
+          onFocus={e => { e.target.style.borderColor = "#e2d609"; e.target.style.boxShadow = "0 0 0 3px rgba(226,214,9,0.1)"; }}
+          onBlur={e => { e.target.style.borderColor = error ? "#ef4444" : "#2d3840"; e.target.style.boxShadow = "none"; }}
+        />
+        {error && <p style={{ fontSize: "12px", color: "#f87171", marginTop: "5px" }}>{error}</p>}
+      </div>
+
+      {/* Barber preference */}
+      <div>
+        <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "7px" }}>
+          Preferred Barber
+        </label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+          <button
+            type="button"
+            onClick={() => setBarberId("")}
+            style={{
+              padding: "8px 14px", borderRadius: "9999px",
+              background: barberId === "" ? "rgba(226,214,9,0.1)" : "transparent",
+              border: `1.5px solid ${barberId === "" ? "#e2d609" : "#2d3840"}`,
+              color: barberId === "" ? "#e2d609" : "rgba(255,255,255,0.5)",
+              fontSize: "13px", fontWeight: 600, cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+          >
+            Any Available
+          </button>
+          {allBarbers.map(b => (
+            <button
+              key={b.id}
+              type="button"
+              onClick={() => setBarberId(b.id)}
+              style={{
+                display: "flex", alignItems: "center", gap: "6px",
+                padding: "8px 14px", borderRadius: "9999px",
+                background: barberId === b.id ? "rgba(226,214,9,0.1)" : "transparent",
+                border: `1.5px solid ${barberId === b.id ? "#e2d609" : "#2d3840"}`,
+                color: barberId === b.id ? "#e2d609" : "rgba(255,255,255,0.5)",
+                fontSize: "13px", fontWeight: 600, cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              <BarberStatusDot status={b.status} />
+              {b.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Services */}
+      <div>
+        <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "7px" }}>
+          Services
+        </label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+          {SERVICES.map(s => {
+            const selected = intents.includes(s.id);
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => toggleService(s.id)}
+                style={{
+                  padding: "10px 12px", borderRadius: "10px", textAlign: "left",
+                  background: selected ? "rgba(226,214,9,0.08)" : "#1e262d",
+                  border: `1.5px solid ${selected ? "#e2d609" : "#2d3840"}`,
+                  cursor: "pointer", transition: "all 0.15s",
+                }}
+              >
+                <div style={{ fontSize: "13px", fontWeight: 600, color: selected ? "#e2d609" : "#f5f5f5" }}>
+                  {s.name}
+                </div>
+                <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.35)", marginTop: "2px" }}>
+                  {s.price.toLocaleString()} ETB
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        {intents.length > 0 && (
+          <div style={{ marginTop: "8px", fontSize: "12px", color: "rgba(255,255,255,0.4)" }}>
+            Total: <span style={{ color: "#e2d609", fontWeight: 700 }}>
+              {SERVICES.filter(s => intents.includes(s.id)).reduce((sum, s) => sum + s.price, 0).toLocaleString()} ETB
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Contact (optional) */}
+      <div>
+        <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "7px" }}>
+          Phone / Contact <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional — for queue alerts)</span>
+        </label>
+        <input
+          type="tel"
+          value={contact}
+          onChange={e => setContact(e.target.value)}
+          placeholder="+251 9XX XXX XXX"
+          style={{
+            width: "100%", padding: "11px 14px",
+            background: "#252f38", border: "1.5px solid #2d3840",
+            borderRadius: "10px", color: "#f5f5f5", fontSize: "15px", outline: "none",
+            boxSizing: "border-box",
+          }}
+          onFocus={e => { e.target.style.borderColor = "#e2d609"; e.target.style.boxShadow = "0 0 0 3px rgba(226,214,9,0.1)"; }}
+          onBlur={e => { e.target.style.borderColor = "#2d3840"; e.target.style.boxShadow = "none"; }}
+        />
+      </div>
+
+      {/* Submit */}
+      <button
+        type="submit"
+        disabled={loading}
+        style={{
+          width: "100%", padding: "14px",
+          borderRadius: "9999px",
+          background: loading ? "rgba(226,214,9,0.4)" : "#e2d609",
+          color: "#0f1317", fontSize: "15px", fontWeight: 800,
+          border: "none", cursor: loading ? "not-allowed" : "pointer",
+          boxShadow: "0 0 24px rgba(226,214,9,0.2)",
+          transition: "all 0.2s ease",
+        }}
+      >
+        {loading ? "Checking in…" : "Check In Customer →"}
+      </button>
+    </form>
+  );
 }
 
 // ─── Queue Entry Row ──────────────────────────────────────────────────────────
@@ -60,9 +337,21 @@ interface QueueRowProps {
   entry:      QueueEntryView;
   isSelected: boolean;
   onSelect:   () => void;
+  barbers:    BarberLaneView[];
 }
 
-function QueueRow({ entry, isSelected, onSelect }: QueueRowProps) {
+function QueueRow({ entry, isSelected, onSelect, barbers }: QueueRowProps) {
+  const barberLane = barbers.find(b => b.barber_id === entry.preferred_barber_id);
+
+  const statusVariant = {
+    WAITING:    "waiting",
+    RESERVED:   "reserved",
+    CALLED:     "called",
+    IN_SERVICE: "in-service",
+    EXPIRED:    "expired",
+    CANCELLED:  "completed",
+  }[entry.status] ?? "neutral";
+
   return (
     <button
       onClick={onSelect}
@@ -73,36 +362,40 @@ function QueueRow({ entry, isSelected, onSelect }: QueueRowProps) {
         border: "none",
         borderBottom: "1px solid #1e262d",
         cursor: "pointer",
-        transition: "background 0.15s ease",
+        transition: "background 0.15s",
         display: "flex", alignItems: "center", gap: "12px",
       }}
     >
       {/* Position */}
-      <span style={{
-        width: "28px", height: "28px", borderRadius: "50%",
+      <div style={{
+        width: "28px", height: "28px", borderRadius: "50%", flexShrink: 0,
         background: isSelected ? "#e2d609" : "#2d3840",
         color: isSelected ? "#0f1317" : "rgba(255,255,255,0.5)",
         fontSize: "11px", fontWeight: 700,
         display: "flex", alignItems: "center", justifyContent: "center",
-        flexShrink: 0,
       }}>
         {entry.position}
-      </span>
+      </div>
 
-      {/* Token + name */}
+      {/* Token + info */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "13px", fontWeight: 700, color: "#e2d609" }}>
+          <span style={{ fontSize: "14px", fontWeight: 900, color: "#e2d609" }}>
             {entry.queue_token || "—"}
           </span>
-          <span style={{ fontSize: "14px", fontWeight: 600, color: "#f5f5f5" }}>
+          <span style={{ fontSize: "14px", fontWeight: 600, color: "#f5f5f5", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {entry.customer_display}
           </span>
         </div>
-        <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)", marginTop: "2px" }}>
-          {entry.preferred_barber_name ?? entry.preferred_barber_id ?? "Any barber"}
+        <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)", marginTop: "2px", display: "flex", alignItems: "center", gap: "6px" }}>
+          {barberLane && <BarberStatusDot status={barberLane.status} />}
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {entry.preferred_barber_id
+              ? (barberLane?.barber_name ?? entry.preferred_barber_id)
+              : "Any barber"}
+          </span>
           {entry.intents.length > 0 && (
-            <span style={{ marginLeft: "8px", color: "rgba(255,255,255,0.3)" }}>
+            <span style={{ color: "rgba(255,255,255,0.25)" }}>
               · {entry.intents.length} service{entry.intents.length !== 1 ? "s" : ""}
             </span>
           )}
@@ -111,8 +404,8 @@ function QueueRow({ entry, isSelected, onSelect }: QueueRowProps) {
 
       {/* Status + wait */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px", flexShrink: 0 }}>
-        <Badge variant={statusVariant(entry.status)} label={entry.status} size="sm" />
-        <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)" }}>
+        <Badge variant={statusVariant as "waiting"} label={entry.status} size="sm" />
+        <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)" }}>
           ~{entry.estimated_wait_minutes}m
         </span>
       </div>
@@ -120,170 +413,49 @@ function QueueRow({ entry, isSelected, onSelect }: QueueRowProps) {
   );
 }
 
-// ─── Check-In Form ────────────────────────────────────────────────────────────
+// ─── Selected Entry Action Panel ──────────────────────────────────────────────
 
-interface CheckInFormProps {
-  barbers:       BarberLaneView[];
-  totalInQueue:  number;
-  sessionId:     string;
-  onSuccess:     () => void;
-}
-
-function CheckInForm({ barbers, totalInQueue, sessionId, onSuccess }: CheckInFormProps) {
-  const [name,      setName]      = useState("");
-  const [barberId,  setBarberId]  = useState("");
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState("");
-  const [lastToken, setLastToken] = useState<string | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) { setError("Customer name is required"); return; }
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const token = issueQueueToken();
-      const result = await checkInCustomer({
-        aggregateId:       crypto.randomUUID(),
-        sessionId,
-        customerUuid:      crypto.randomUUID(),
-        preferredBarberId: barberId || null,
-        checkinMethod:     "walk-in",
-        customerName:      name.trim(),
-        queueToken:        token,
-      });
-
-      if (result && "success" in result && !result.success) {
-        setError(`Check-in rejected: ${result.reason}`);
-        return;
-      }
-
-      setLastToken(token);
-      setName("");
-      setBarberId("");
-      onSuccess();
-    } catch (err) {
-      setError("Check-in failed. Please try again.");
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-      <div>
-        <label style={{ fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: "6px" }}>
-          Customer Name
-        </label>
-        <input
-          type="text"
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder="First name"
-          autoFocus
-          style={{
-            width: "100%", padding: "11px 14px",
-            background: "#252f38", border: `1px solid ${error ? "#ef4444" : "#2d3840"}`,
-            borderRadius: "10px", color: "#f5f5f5",
-            fontSize: "15px", outline: "none",
-          }}
-        />
-      </div>
-
-      <div>
-        <label style={{ fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: "6px" }}>
-          Preferred Barber
-        </label>
-        <select
-          value={barberId}
-          onChange={e => setBarberId(e.target.value)}
-          aria-label="Select preferred barber"
-          style={{
-            width: "100%", padding: "11px 14px",
-            background: "#252f38", border: "1px solid #2d3840",
-            borderRadius: "10px", color: "#f5f5f5",
-            fontSize: "15px", outline: "none",
-          }}
-        >
-          <option value="">Any Available</option>
-          {barbers.map(b => (
-            <option key={b.barber_id} value={b.barber_id} disabled={b.status === "OFFLINE"}>
-              {b.barber_name} — {b.status}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {error && (
-        <p style={{ fontSize: "13px", color: "#ef4444", margin: 0 }}>{error}</p>
-      )}
-
-      {lastToken && (
-        <div style={{
-          padding: "14px 16px", borderRadius: "12px",
-          background: "rgba(226,214,9,0.1)", border: "1px solid rgba(226,214,9,0.35)",
-          textAlign: "center",
-        }}>
-          <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", marginBottom: "4px" }}>
-            Queue token — tell the customer
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 900, color: "#e2d609", letterSpacing: "0.05em" }}>
-            {lastToken}
-          </div>
-        </div>
-      )}
-
-      <button
-        type="submit"
-        disabled={loading}
-        style={{
-          padding: "13px 28px", borderRadius: "9999px",
-          background: loading ? "rgba(226,214,9,0.4)" : "#e2d609",
-          color: "#0f1317", fontSize: "14px", fontWeight: 800,
-          border: "none", cursor: loading ? "not-allowed" : "pointer",
-          boxShadow: "0 0 24px rgba(226,214,9,0.25)",
-          transition: "all 0.2s ease",
-        }}
-      >
-        {loading ? "Checking in…" : "Check In Customer →"}
-      </button>
-    </form>
-  );
-}
-
-// ─── Selected Customer Panel ──────────────────────────────────────────────────
-
-interface SelectedPanelProps {
-  entry:    QueueEntryView;
-  barbers:  BarberLaneView[];
+interface ActionPanelProps {
+  entry:     QueueEntryView;
+  barbers:   BarberLaneView[];
   sessionId: string;
-  onClose:  () => void;
+  onClose:   () => void;
 }
 
-function SelectedPanel({ entry, barbers, sessionId, onClose }: SelectedPanelProps) {
+function ActionPanel({ entry, barbers, sessionId, onClose }: ActionPanelProps) {
   const [loading, setLoading] = useState<string | null>(null);
 
-  const preferredBarber = barbers.find(b => b.barber_id === entry.preferred_barber_id);
-  const canCall = !entry.preferred_barber_id || preferredBarber?.status === "AVAILABLE";
+  const preferredLane = barbers.find(b => b.barber_id === entry.preferred_barber_id);
+  const canCall = !entry.preferred_barber_id || preferredLane?.status === "AVAILABLE";
 
   const handleCall = async () => {
     if (!canCall || loading) return;
     setLoading("call");
     try {
-      const result = await callCustomer({
-        aggregateId: entry.queue_entry_id,
+      await callCustomer({
+        aggregateId:      entry.queue_entry_id,
+        aggregateVersion: 2,
         sessionId,
-        barberId:    entry.preferred_barber_id ?? "",
+        barberId:         entry.preferred_barber_id ?? "",
       });
-      if (result && "success" in result && !result.success) {
-        console.warn("Call rejected:", result.reason);
-        return;
-      }
       onClose();
-    } finally { setLoading(null); }
+    } catch (e) { console.error(e); }
+    finally { setLoading(null); }
+  };
+
+  const handleNoShow = async () => {
+    if (loading) return;
+    setLoading("noshow");
+    try {
+      await cancelReservation({
+        aggregateId:      entry.queue_entry_id,
+        aggregateVersion: 2,
+        sessionId,
+        reasonCode:       "NO_SHOW",
+      });
+      onClose();
+    } catch (e) { console.error(e); }
+    finally { setLoading(null); }
   };
 
   const handleCancel = async () => {
@@ -291,96 +463,129 @@ function SelectedPanel({ entry, barbers, sessionId, onClose }: SelectedPanelProp
     setLoading("cancel");
     try {
       await cancelReservation({
-        aggregateId: entry.queue_entry_id,
+        aggregateId:      entry.queue_entry_id,
+        aggregateVersion: 2,
         sessionId,
-        reasonCode:  "CUSTOMER_REQUEST",
+        reasonCode:       "CUSTOMER_REQUEST",
       });
       onClose();
-    } finally { setLoading(null); }
+    } catch (e) { console.error(e); }
+    finally { setLoading(null); }
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-      {/* Customer info */}
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+
+      {/* Customer summary */}
       <div style={{ padding: "16px", background: "#1e262d", borderRadius: "12px", border: "1px solid #2d3840" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
-          <span style={{ fontSize: "20px", fontWeight: 900, color: "#e2d609" }}>
-            {entry.queue_token || "—"}
-          </span>
+          <span style={{ fontSize: "24px", fontWeight: 900, color: "#e2d609" }}>{entry.queue_token}</span>
           <div>
-            <div style={{ fontSize: "16px", fontWeight: 700, color: "#f5f5f5" }}>
-              {entry.customer_display}
-            </div>
+            <div style={{ fontSize: "16px", fontWeight: 700, color: "#f5f5f5" }}>{entry.customer_display}</div>
             <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)" }}>
-              {entry.preferred_barber_name ?? entry.preferred_barber_id ?? "Any barber"}
+              {preferredLane?.barber_name ?? entry.preferred_barber_id ?? "Any barber"}
             </div>
           </div>
           <div style={{ marginLeft: "auto" }}>
-            <Badge variant={statusVariant(entry.status)} label={entry.status} size="sm" />
+            <Badge variant={entry.status === "WAITING" ? "waiting" : "called"} label={entry.status} size="sm" />
           </div>
         </div>
 
-        {/* Intents */}
+        {/* Services */}
         {entry.intents.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-            {entry.intents.map(id => (
-              <span key={id} style={{
-                padding: "3px 10px", borderRadius: "9999px",
-                background: "rgba(226,214,9,0.1)", border: "1px solid rgba(226,214,9,0.2)",
-                fontSize: "11px", color: "#e2d609", fontWeight: 600,
-              }}>
-                {id}
-                {!entry.is_intent_locked && (
-                  <button
-                    onClick={() => removeServiceIntent({ aggregateId: entry.queue_entry_id, aggregateVersion: 2, sessionId, serviceId: id })}
-                    style={{ marginLeft: "6px", background: "none", border: "none", color: "rgba(226,214,9,0.6)", cursor: "pointer", fontSize: "11px" }}
-                  >
-                    ×
-                  </button>
-                )}
-              </span>
-            ))}
+            {entry.intents.map(id => {
+              const svc = SERVICES.find(s => s.id === id);
+              return (
+                <div key={id} style={{
+                  display: "flex", alignItems: "center", gap: "4px",
+                  padding: "3px 10px", borderRadius: "9999px",
+                  background: "rgba(226,214,9,0.08)", border: "1px solid rgba(226,214,9,0.2)",
+                }}>
+                  <span style={{ fontSize: "11px", color: "#e2d609", fontWeight: 600 }}>
+                    {svc?.name ?? id}
+                  </span>
+                  {!entry.is_intent_locked && (
+                    <button
+                      onClick={() => removeServiceIntent({ aggregateId: entry.queue_entry_id, aggregateVersion: 2, sessionId, serviceId: id })}
+                      style={{ background: "none", border: "none", color: "rgba(226,214,9,0.5)", cursor: "pointer", fontSize: "12px", padding: "0 2px", lineHeight: 1 }}
+                      aria-label={`Remove ${svc?.name ?? id}`}
+                    >×</button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Call to Chair */}
-      <div>
-        <button
-          onClick={handleCall}
-          disabled={!canCall || loading === "call"}
-          style={{
-            width: "100%", padding: "13px 28px", borderRadius: "9999px",
-            background: canCall ? "#e2d609" : "rgba(226,214,9,0.2)",
-            color: canCall ? "#0f1317" : "rgba(255,255,255,0.3)",
-            fontSize: "14px", fontWeight: 800,
-            border: "none", cursor: canCall ? "pointer" : "not-allowed",
-            boxShadow: canCall ? "0 0 24px rgba(226,214,9,0.25)" : "none",
-            transition: "all 0.2s ease",
-          }}
-        >
-          {loading === "call" ? "Calling…" : "Call to Chair →"}
-        </button>
-        {!canCall && preferredBarber && (
-          <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.35)", textAlign: "center", marginTop: "8px" }}>
-            {preferredBarber.barber_name} is {preferredBarber.status.toLowerCase()} — cannot call yet
-          </p>
-        )}
-      </div>
-
-      {/* Cancel */}
+      {/* Call to Chair — PRIMARY action */}
       <button
-        onClick={handleCancel}
-        disabled={loading === "cancel"}
+        onClick={handleCall}
+        disabled={!canCall || !!loading}
         style={{
-          width: "100%", padding: "12px 28px", borderRadius: "9999px",
-          background: "transparent", color: "#ef4444",
-          fontSize: "14px", fontWeight: 700,
-          border: "2px solid rgba(239,68,68,0.4)", cursor: "pointer",
-          transition: "all 0.2s ease",
+          width: "100%", padding: "14px",
+          borderRadius: "9999px",
+          background: canCall ? "#e2d609" : "rgba(226,214,9,0.15)",
+          color: canCall ? "#0f1317" : "rgba(255,255,255,0.25)",
+          fontSize: "14px", fontWeight: 800,
+          border: "none", cursor: canCall ? "pointer" : "not-allowed",
+          boxShadow: canCall ? "0 0 24px rgba(226,214,9,0.2)" : "none",
+          transition: "all 0.2s",
         }}
       >
-        {loading === "cancel" ? "Cancelling…" : "Cancel & Remove"}
+        {loading === "call" ? "Calling…" : "Call to Chair →"}
+      </button>
+
+      {/* Barber unavailable reason */}
+      {!canCall && preferredLane && (
+        <p style={{ textAlign: "center", fontSize: "12px", color: "rgba(255,255,255,0.3)", marginTop: "-8px" }}>
+          {preferredLane.barber_name} is {preferredLane.status.toLowerCase().replace("_", " ")} — cannot call yet
+        </p>
+      )}
+
+      {/* Secondary actions */}
+      <div style={{ display: "flex", gap: "8px" }}>
+        <button
+          onClick={handleNoShow}
+          disabled={!!loading}
+          style={{
+            flex: 1, padding: "11px",
+            borderRadius: "9999px",
+            background: "transparent", color: "rgba(245,158,11,0.7)",
+            border: "1px solid rgba(245,158,11,0.25)",
+            fontSize: "13px", fontWeight: 600, cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+        >
+          {loading === "noshow" ? "…" : "No-Show"}
+        </button>
+        <button
+          onClick={handleCancel}
+          disabled={!!loading}
+          style={{
+            flex: 1, padding: "11px",
+            borderRadius: "9999px",
+            background: "transparent", color: "rgba(239,68,68,0.7)",
+            border: "1px solid rgba(239,68,68,0.2)",
+            fontSize: "13px", fontWeight: 600, cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+        >
+          {loading === "cancel" ? "…" : "Cancel"}
+        </button>
+      </div>
+
+      <button
+        onClick={onClose}
+        style={{
+          background: "none", border: "none",
+          color: "rgba(255,255,255,0.3)", cursor: "pointer",
+          fontSize: "12px", textAlign: "center",
+          padding: "4px",
+        }}
+      >
+        ← Back to queue
       </button>
     </div>
   );
@@ -389,206 +594,229 @@ function SelectedPanel({ entry, barbers, sessionId, onClose }: SelectedPanelProp
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function CashierScreen() {
-  const { view: queue }   = useQueueBoard();
-  const { view: lanes }   = useBarberLane();
-  const { session }       = useSession();
-  const sync              = useSyncStatus();
+  const { view: queue }  = useQueueBoard();
+  const { view: lanes }  = useBarberLane();
+  const { session }      = useSession();
+  const [tab, setTab]    = useState<Tab>("checkin");
   const [selected, setSelected] = useState<QueueEntryView | null>(null);
-
-  const allEntries = [
-    ...(queue?.reservations ?? []),
-    ...(queue?.entries ?? []),
-    ...(queue?.called ?? []),
-  ];
-
-  const barbers = lanes?.lanes ?? [];
+  const [lastToken, setLastToken] = useState<string | null>(null);
 
   if (!session) return null;
+
+  // All barbers from roster (for check-in form)
+  const rosterBarbers = sessionService.getRoster()
+    .filter(op => op.role === "BARBER" && op.barber_id)
+    .map(op => ({ actor_id: op.actor_id, name: op.name, barber_id: op.barber_id }));
+
+  const barberLanes  = lanes?.lanes ?? [];
+  const waiting      = queue?.entries ?? [];
+  const reserved     = queue?.reservations ?? [];
+  const called       = queue?.called ?? [];
+  const inService    = queue?.in_service ?? [];
+  const totalWaiting = queue?.total_waiting ?? 0;
+  const totalToday   = waiting.length + called.length + inService.length;
+
+  const allActive = [...reserved, ...waiting, ...called];
 
   return (
     <div style={{ minHeight: "100dvh", background: "#0f1317", display: "flex", flexDirection: "column" }}>
       <TopBar session={session} />
 
-      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-
-        {/* ── Left: Queue List ─────────────────────────────────────────────── */}
-        <div style={{
-          width: "60%", minWidth: "300px",
-          borderRight: "1px solid #2d3840",
-          display: "flex", flexDirection: "column",
-          overflow: "hidden",
-        }}>
-          {/* Header */}
-          <div style={{
-            padding: "16px 20px",
-            borderBottom: "1px solid #2d3840",
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-          }}>
-            <div>
-              <span style={{ fontSize: "11px", fontWeight: 700, color: "#e2d609", textTransform: "uppercase", letterSpacing: "0.15em" }}>
-                Waiting Queue
-              </span>
+      {/* ── Tab bar ──────────────────────────────────────────────────────── */}
+      <div style={{ display: "flex", background: "#171d22", borderBottom: "1px solid #2d3840", flexShrink: 0 }}>
+        {([
+          { id: "checkin", label: "Check In", count: null },
+          { id: "queue",   label: "Queue",    count: totalWaiting },
+        ] as const).map(t => (
+          <button
+            key={t.id}
+            onClick={() => { setTab(t.id); setSelected(null); }}
+            style={{
+              flex: 1, padding: "14px 16px",
+              background: "transparent", border: "none",
+              borderBottom: `2px solid ${tab === t.id ? "#e2d609" : "transparent"}`,
+              color: tab === t.id ? "#e2d609" : "rgba(255,255,255,0.4)",
+              fontSize: "13px", fontWeight: tab === t.id ? 700 : 500,
+              cursor: "pointer", transition: "all 0.2s",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+            }}
+          >
+            {t.label}
+            {t.count !== null && t.count > 0 && (
               <span style={{
-                marginLeft: "10px", padding: "2px 8px", borderRadius: "9999px",
-                background: "rgba(59,130,246,0.15)", color: "#3b82f6",
+                padding: "1px 7px", borderRadius: "9999px",
+                background: tab === t.id ? "rgba(226,214,9,0.15)" : "rgba(255,255,255,0.08)",
+                color: tab === t.id ? "#e2d609" : "rgba(255,255,255,0.4)",
                 fontSize: "11px", fontWeight: 700,
               }}>
-                {queue?.total_waiting ?? 0}
+                {t.count}
               </span>
-            </div>
-            <SyncIndicator state={sync.state} compact />
-          </div>
-
-          {/* Reservations section */}
-          {(queue?.reservations?.length ?? 0) > 0 && (
-            <div>
-              <div style={{ padding: "8px 20px", background: "rgba(139,92,246,0.08)", borderBottom: "1px solid #2d3840" }}>
-                <span style={{ fontSize: "10px", fontWeight: 700, color: "#8b5cf6", textTransform: "uppercase", letterSpacing: "0.12em" }}>
-                  Reserved ({queue!.reservations.length})
-                </span>
-              </div>
-              {queue!.reservations.map(entry => (
-                <QueueRow
-                  key={entry.queue_entry_id}
-                  entry={entry}
-                  isSelected={selected?.queue_entry_id === entry.queue_entry_id}
-                  onSelect={() => setSelected(entry)}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Waiting + Called entries */}
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            {allEntries.filter(e => e.status !== "RESERVED").length === 0 ? (
-              <div style={{ padding: "48px 20px", textAlign: "center" }}>
-                <div style={{ fontSize: "32px", marginBottom: "12px" }}>🪑</div>
-                <p style={{ fontSize: "14px", color: "rgba(255,255,255,0.3)" }}>
-                  No customers waiting
-                </p>
-              </div>
-            ) : (
-              allEntries
-                .filter(e => e.status !== "RESERVED")
-                .map(entry => (
-                  <QueueRow
-                    key={entry.queue_entry_id}
-                    entry={entry}
-                    isSelected={selected?.queue_entry_id === entry.queue_entry_id}
-                    onSelect={() => setSelected(entry)}
-                  />
-                ))
             )}
-          </div>
+          </button>
+        ))}
+      </div>
 
-          {/* In-service strip */}
-          {(queue?.in_service?.length ?? 0) > 0 && (
-            <div style={{ borderTop: "1px solid #2d3840", padding: "8px 20px", background: "rgba(16,185,129,0.06)" }}>
-              <span style={{ fontSize: "10px", fontWeight: 700, color: "#10b981", textTransform: "uppercase", letterSpacing: "0.12em" }}>
-                In Service ({queue!.in_service.length})
-              </span>
-              <div style={{ display: "flex", gap: "8px", marginTop: "6px", flexWrap: "wrap" }}>
-                {queue!.in_service.map(e => (
-                  <span key={e.queue_entry_id} style={{
-                    padding: "3px 10px", borderRadius: "9999px",
-                    background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.2)",
-                    fontSize: "12px", color: "#10b981", fontWeight: 700,
-                  }}>
-                    {e.queue_token}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+      {/* ── Content ──────────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+        <AnimatePresence mode="wait">
 
-        {/* ── Right: Action Panel ───────────────────────────────────────────── */}
-        <div style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "24px",
-          display: "flex", flexDirection: "column", gap: "24px",
-        }}>
-          <AnimatePresence mode="wait">
-            {selected ? (
-              <motion.div
-                key={selected.queue_entry_id}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.25, ease: "easeOut" }}
-              >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
-                  <span style={{ fontSize: "11px", fontWeight: 700, color: "#e2d609", textTransform: "uppercase", letterSpacing: "0.15em" }}>
-                    Customer Actions
-                  </span>
-                  <button
-                    onClick={() => setSelected(null)}
-                    style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: "18px" }}
-                    aria-label="Close panel"
-                  >
-                    ×
-                  </button>
-                </div>
-                <SelectedPanel
-                  entry={selected}
-                  barbers={barbers}
-                  sessionId={session.session_id}
-                  onClose={() => setSelected(null)}
-                />
-              </motion.div>
-            ) : (
-              <motion.div
-                key="checkin"
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.25, ease: "easeOut" }}
-              >
+          {/* ── CHECK-IN TAB ─────────────────────────────────────────────── */}
+          {tab === "checkin" && (
+            <motion.div
+              key="checkin"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              style={{ flex: 1, overflowY: "auto", padding: "20px 16px" }}
+            >
+              <div style={{ maxWidth: "480px", margin: "0 auto" }}>
                 <div style={{ marginBottom: "20px" }}>
                   <span style={{ fontSize: "11px", fontWeight: 700, color: "#e2d609", textTransform: "uppercase", letterSpacing: "0.15em" }}>
-                    Check In New Customer
+                    New Walk-In
                   </span>
                 </div>
                 <CheckInForm
-                  barbers={barbers}
-                  totalInQueue={queue?.total_waiting ?? 0}
+                  barbers={barberLanes}
+                  rosterBarbers={rosterBarbers}
+                  totalToday={totalToday}
                   sessionId={session.session_id}
-                  onSuccess={() => {}}
+                  onSuccess={token => { setLastToken(token); setTab("queue"); }}
                 />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Barber lane status strip */}
-          {barbers.length > 0 && (
-            <div style={{ marginTop: "auto", paddingTop: "20px", borderTop: "1px solid #2d3840" }}>
-              <span style={{ fontSize: "10px", fontWeight: 700, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.12em", display: "block", marginBottom: "10px" }}>
-                Barber Lanes
-              </span>
-              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                {barbers.map(b => (
-                  <div key={b.barber_id} style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "8px 12px", borderRadius: "8px", background: "#1e262d",
-                  }}>
-                    <span style={{ fontSize: "13px", color: "#f5f5f5", fontWeight: 600 }}>{b.barber_name}</span>
-                    <Badge
-                      variant={
-                        b.status === "AVAILABLE"   ? "waiting"    :
-                        b.status === "IN_SERVICE"  ? "in-service" :
-                        b.status === "CALLED"      ? "called"     :
-                        "neutral"
-                      }
-                      label={b.status}
-                      size="sm"
-                    />
-                  </div>
-                ))}
               </div>
-            </div>
+            </motion.div>
           )}
-        </div>
+
+          {/* ── QUEUE TAB ────────────────────────────────────────────────── */}
+          {tab === "queue" && (
+            <motion.div
+              key="queue"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              style={{ flex: 1, display: "flex", overflow: "hidden" }}
+            >
+              {/* Queue list */}
+              <div style={{
+                width: selected ? "45%" : "100%",
+                borderRight: selected ? "1px solid #2d3840" : "none",
+                display: "flex", flexDirection: "column",
+                overflow: "hidden",
+                transition: "width 0.3s ease",
+              }}>
+                {/* Header */}
+                <div style={{
+                  padding: "12px 16px",
+                  borderBottom: "1px solid #2d3840",
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  flexShrink: 0,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "11px", fontWeight: 700, color: "#e2d609", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+                      Waiting Queue
+                    </span>
+                    {totalWaiting > 0 && (
+                      <span style={{ padding: "1px 7px", borderRadius: "9999px", background: "rgba(59,130,246,0.15)", color: "#3b82f6", fontSize: "11px", fontWeight: 700 }}>
+                        {totalWaiting}
+                      </span>
+                    )}
+                  </div>
+                  <SyncIndicator state="verified" compact />
+                </div>
+
+                {/* Reserved section */}
+                {reserved.length > 0 && (
+                  <div style={{ borderBottom: "1px solid #2d3840", flexShrink: 0 }}>
+                    <div style={{ padding: "6px 16px", background: "rgba(139,92,246,0.06)" }}>
+                      <span style={{ fontSize: "10px", fontWeight: 700, color: "#8b5cf6", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                        Reserved ({reserved.length})
+                      </span>
+                    </div>
+                    {reserved.map(e => (
+                      <QueueRow key={e.queue_entry_id} entry={e} isSelected={selected?.queue_entry_id === e.queue_entry_id} onSelect={() => setSelected(e)} barbers={barberLanes} />
+                    ))}
+                  </div>
+                )}
+
+                {/* Waiting + Called */}
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  {allActive.filter(e => e.status !== "RESERVED").length === 0 ? (
+                    <div style={{ padding: "48px 20px", textAlign: "center" }}>
+                      <div style={{ fontSize: "28px", marginBottom: "10px" }}>🪑</div>
+                      <p style={{ fontSize: "14px", color: "rgba(255,255,255,0.25)" }}>
+                        No customers waiting
+                      </p>
+                      <button
+                        onClick={() => setTab("checkin")}
+                        style={{
+                          marginTop: "16px", padding: "10px 20px",
+                          borderRadius: "9999px", background: "transparent",
+                          border: "1px solid #2d3840", color: "rgba(255,255,255,0.4)",
+                          fontSize: "13px", cursor: "pointer",
+                        }}
+                      >
+                        Check in a customer →
+                      </button>
+                    </div>
+                  ) : (
+                    allActive
+                      .filter(e => e.status !== "RESERVED")
+                      .map(e => (
+                        <QueueRow
+                          key={e.queue_entry_id}
+                          entry={e}
+                          isSelected={selected?.queue_entry_id === e.queue_entry_id}
+                          onSelect={() => setSelected(e)}
+                          barbers={barberLanes}
+                        />
+                      ))
+                  )}
+                </div>
+
+                {/* In-service strip */}
+                {inService.length > 0 && (
+                  <div style={{ borderTop: "1px solid #2d3840", padding: "8px 16px", background: "rgba(16,185,129,0.04)", flexShrink: 0 }}>
+                    <span style={{ fontSize: "10px", fontWeight: 700, color: "#10b981", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                      In Service ({inService.length})
+                    </span>
+                    <div style={{ display: "flex", gap: "6px", marginTop: "6px", flexWrap: "wrap" }}>
+                      {inService.map(e => (
+                        <span key={e.queue_entry_id} style={{
+                          padding: "3px 10px", borderRadius: "9999px",
+                          background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)",
+                          fontSize: "12px", color: "#10b981", fontWeight: 700,
+                        }}>
+                          {e.queue_token}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action panel */}
+              <AnimatePresence>
+                {selected && (
+                  <motion.div
+                    initial={{ opacity: 0, x: 16 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 16 }}
+                    transition={{ duration: 0.22, ease: "easeOut" }}
+                    style={{ flex: 1, overflowY: "auto", padding: "20px 16px" }}
+                  >
+                    <ActionPanel
+                      entry={selected}
+                      barbers={barberLanes}
+                      sessionId={session.session_id}
+                      onClose={() => setSelected(null)}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
