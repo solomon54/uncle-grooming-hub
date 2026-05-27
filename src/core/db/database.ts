@@ -36,6 +36,10 @@ export async function getDatabase(): Promise<RxDatabase> {
       addRxPlugin(RxDBDevModePlugin);
     }
 
+    // Migration plugin — required when any collection schema version > 0
+    const { RxDBMigrationSchemaPlugin } = await import("rxdb/plugins/migration-schema");
+    addRxPlugin(RxDBMigrationSchemaPlugin);
+
     const { getRxStorageDexie } = await import("rxdb/plugins/storage-dexie");
     const baseStorage = getRxStorageDexie();
 
@@ -49,7 +53,7 @@ export async function getDatabase(): Promise<RxDatabase> {
 
     try {
       const db = await createRxDatabase({
-        name:            "ugh_local_journal_v5",
+        name:            "ugh_local_journal",  // stable name — never change this
         storage,
         ignoreDuplicate: true,
       });
@@ -65,7 +69,20 @@ export async function getDatabase(): Promise<RxDatabase> {
 
       await db.addCollections({
         // Primary unified journal (used by journal.service.ts)
-        journal:          { schema: journalSchema },
+        journal: {
+          schema: journalSchema,
+          // Migration from v0 (had 'synced' field) to v1 (renamed to 'is_synced')
+          migrationStrategies: {
+            1: (oldDoc: Record<string, unknown>) => {
+              // Rename synced → is_synced
+              return {
+                ...oldDoc,
+                is_synced: oldDoc.synced ?? false,
+                synced:    undefined,
+              };
+            },
+          },
+        },
         // Per-aggregate collections (used by sync engine and projections)
         queue_entries:    { schema: queueEntrySchema },
         barber_lanes:     { schema: barberLaneSchema },

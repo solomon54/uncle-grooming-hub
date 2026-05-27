@@ -38,7 +38,7 @@ export const journalSchema: RxJsonSchema<{
   is_synced:         boolean;
 }> = {
   title:      "journal",
-  version:    0,
+  version:    1,  // bumped from 0 — renamed synced→is_synced (RxDB SC17)
   primaryKey: "event_id",
   type:       "object",
 

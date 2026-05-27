@@ -39,6 +39,8 @@ function meta(session: ActiveSession) {
 export interface SetAvailableParams {
   barberId:         string;
   aggregateVersion: number;
+  /** Status to set — defaults to AVAILABLE. Use ON_BREAK for break. */
+  status?: "AVAILABLE" | "ON_BREAK" | "OFFLINE";
 }
 
 export async function setAvailable(params: SetAvailableParams, session: ActiveSession) {
@@ -47,7 +49,10 @@ export async function setAvailable(params: SetAvailableParams, session: ActiveSe
     event_type:        "BARBER_AVAILABLE",
     aggregate_id:      params.barberId,
     aggregate_version: params.aggregateVersion,
-    payload:           { barber_id: params.barberId },
+    payload:           {
+      barber_id: params.barberId,
+      status:    params.status ?? "AVAILABLE",
+    } as BarberAvailableEvent["payload"] & Record<string, unknown>,
     metadata:          meta(session),
   };
   return runtime.emit(event);

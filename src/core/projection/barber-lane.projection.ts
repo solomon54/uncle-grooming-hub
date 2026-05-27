@@ -46,15 +46,17 @@ export const barberLaneProjection: Projection<BarberLaneState> = {
   handlers: {
 
     // EVENT 02 — BARBER_AVAILABLE
+    // Payload may include a status field (AVAILABLE, ON_BREAK, OFFLINE)
     BARBER_AVAILABLE: (state, event): BarberLaneState => {
-      const p = event.payload as { barber_id: string };
+      const p = event.payload as { barber_id: string; status?: string };
       const lane = getLane(state.lanes, p.barber_id);
+      const newStatus = (p.status as BarberLaneView["status"]) ?? "AVAILABLE";
       return {
         ...state,
         lanes: upsertLane(state.lanes, {
           ...lane,
-          status:           "AVAILABLE",
-          current_customer: undefined,
+          status:           newStatus,
+          current_customer: newStatus === "AVAILABLE" ? undefined : lane.current_customer,
         }),
         last_updated_hlc: event.metadata.hlc_timestamp,
       };

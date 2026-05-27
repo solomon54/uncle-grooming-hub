@@ -399,10 +399,12 @@ function ScheduleTab({ rules, barberId, session, aggVersion }: ScheduleTabProps)
   const handleSave = async () => {
     setSaving(true);
     try {
+      const { journalService } = await import("@/core/journal/journal.service");
       for (const rule of localRules) {
+        const nextVersion = await journalService.getNextAggregateVersion(barberId);
         await updateSchedule({
           barberId,
-          aggregateVersion: aggVersion,
+          aggregateVersion: nextVersion,
           dayOfWeek:        rule.day_of_week,
           startTime:        rule.start_time,
           endTime:          rule.end_time,
@@ -580,13 +582,9 @@ export default function BarberDashboardScreen({ laneId }: BarberDashboardScreenP
     if (loading) return;
     setLoading("break");
     try {
-      // EVENT 02 with ON_BREAK status — barber controls their own availability
       const { journalService } = await import("@/core/journal/journal.service");
       const nextVersion = await journalService.getNextAggregateVersion(laneId);
-      // Reuse setAvailable action but the BarberLane projection will need
-      // to handle a status payload. For now emit EVENT 02 — projection
-      // maps it to AVAILABLE. Phase 2: add explicit ON_BREAK event type.
-      await setAvailable({ barberId: laneId, aggregateVersion: nextVersion }, session);
+      await setAvailable({ barberId: laneId, aggregateVersion: nextVersion, status: "ON_BREAK" }, session);
     } finally { setLoading(null); }
   };
 
