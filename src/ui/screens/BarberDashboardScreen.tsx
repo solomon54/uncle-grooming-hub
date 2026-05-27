@@ -505,9 +505,11 @@ export default function BarberDashboardScreen({ laneId }: BarberDashboardScreenP
     if (!calledCustomer || loading) return;
     setLoading("start");
     try {
+      const { journalService } = await import("@/core/journal/journal.service");
+      const nextVersion = await journalService.getNextAggregateVersion(calledCustomer.queue_entry_id);
       await startService({
         queueEntryId:     calledCustomer.queue_entry_id,
-        aggregateVersion: 2,
+        aggregateVersion: nextVersion,
         priceSnapshotId:  crypto.randomUUID(),
         barberId:         laneId,
         customerUuid:     calledCustomer.customer_uuid,
@@ -520,9 +522,11 @@ export default function BarberDashboardScreen({ laneId }: BarberDashboardScreenP
     if (!inServiceCustomer || loading) return;
     setLoading("complete");
     try {
+      const { journalService } = await import("@/core/journal/journal.service");
+      const nextVersion = await journalService.getNextAggregateVersion(inServiceCustomer.queue_entry_id);
       await completeService({
         queueEntryId:     inServiceCustomer.queue_entry_id,
-        aggregateVersion: 3,
+        aggregateVersion: nextVersion,
       }, session);
     } finally { setLoading(null); }
   };
@@ -531,7 +535,10 @@ export default function BarberDashboardScreen({ laneId }: BarberDashboardScreenP
     if (loading) return;
     setLoading("available");
     try {
-      await setAvailable({ barberId: laneId, aggregateVersion: aggVersion }, session);
+      // getNextAggregateVersion returns 1 for new aggregates (first EVENT 02)
+      const { journalService } = await import("@/core/journal/journal.service");
+      const nextVersion = await journalService.getNextAggregateVersion(laneId);
+      await setAvailable({ barberId: laneId, aggregateVersion: nextVersion }, session);
     } finally { setLoading(null); }
   };
 

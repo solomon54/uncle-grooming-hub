@@ -1,17 +1,35 @@
 /**
- * POST /api/sync/push — Cloud sync ingest (Phase 4 stub, Phase 8 Supabase).
+ * @file route.ts
+ * @module app/api/sync/push
  *
- * Specification: MODULE_PRIORITY.md P8.2
- * TAS §5 — idempotent ACK by event_id
+ * POST /api/sync/push — Cloud sync ingest + Pusher real-time trigger.
+ *
+ * Specification: MODULE_PRIORITY.md P8.2, P4.4
+ *                TAS §5 — idempotent ACK by event_id
+ *
+ * Phase 1: ACKs all events, triggers Pusher for real-time client updates.
+ * Phase 8: Will validate signatures and insert into Supabase before ACK.
  */
 
-import { NextResponse }     from "next/server";
-import { dedupeEventIds }   from "@/core/sync/idempotency.guard";
+import { NextResponse }          from "next/server";
+import { dedupeEventIds }        from "@/core/sync/idempotency.guard";
+import { triggerQueueEvent }     from "@/core/realtime/pusher.server";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface SyncEvent {
+  event_id?:    string;
+  event_type?:  string;
+  aggregate_id?: string;
+  payload?:     Record<string, unknown>;
+}
 
 interface PushBody {
   terminal_id?: string;
-  events?:      Array<{ event_id?: string }>;
+  events?:      SyncEvent[];
 }
+
+// ─── Handler ──────────────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
   let body: PushBody;
@@ -38,7 +56,25 @@ export async function POST(request: Request) {
 
   const ack_event_ids = dedupeEventIds(eventIds);
 
-  // Phase 8: validate signatures, insert into Supabase, trigger Pusher.
+  // ── Trigger Pusher for each event (best-effort, non-blocking) ────────────
+  // This is what makes the customer tracking page update in real-time.
+  const pusherPromises = events
+    .filter(e => e.event_type && e.payload)
+    .map(e =>
+      triggerQueueEvent(e.event_type!, {
+        ...e.payload,
+        event_type:   e.event_type,
+        aggregate_id: e.aggregate_id,
+      }).catch(err => {
+        // Non-fatal — sync still succeeds even if Pusher fails
+        console.warn("[sync/push] Pusher trigger failed:", err);
+      })
+    );
+
+  // Fire Pusher triggers in parallel, don't await (non-blocking)
+  void Promise.all(pusherPromises);
+
+  // Phase 8: validate signatures, insert into Supabase here.
   return NextResponse.json({
     batch_id:       crypto.randomUUID(),
     ack_event_ids,

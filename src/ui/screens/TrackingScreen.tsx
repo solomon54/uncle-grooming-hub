@@ -27,6 +27,8 @@ import React, { useEffect, useState } from "react";
 import Link                            from "next/link";
 import { useQueueBoard }               from "@/ui/hooks/useQueueBoard";
 import { useBarberLane }               from "@/ui/hooks/useBarberLane";
+import { usePusherChannelMulti }       from "@/ui/hooks/usePusherChannel";
+import { PUSHER_CHANNELS, PUSHER_EVENTS } from "@/core/realtime/pusher.server";
 import { hlcToElapsedMinutes, formatWaitEstimate } from "@/shared/utils/hlc.utils";
 import type { QueueEntryView }         from "@/projections/queue-board.view";
 import type { BarberLaneView }         from "@/projections/barber-lane.view";
@@ -153,11 +155,51 @@ export default function TrackingScreen({ token }: TrackingScreenProps) {
   const { view: lanes }  = useBarberLane();
   const [locale, setLocale] = useState<"en" | "am">("en");
   const [, setTick] = useState(0);
+  const [notification, setNotification] = useState<string | null>(null);
 
-  // Refresh every 30s (Pusher real-time in Phase 4.4)
+  // ── Pusher real-time subscription ──────────────────────────────────────────
+  // Subscribes to this customer's personal channel.
+  // Falls back to 30s polling when Pusher not configured.
+  usePusherChannelMulti(
+    PUSHER_CHANNELS.queueToken(token),
+    {
+      [PUSHER_EVENTS.queueUpdated]:   () => setTick(n => n + 1),
+      [PUSHER_EVENTS.customerCalled]: () => {
+        setTick(n => n + 1);
+        setNotification(locale === "en"
+          ? "It's your turn! Come to the chair. 🪒"
+          : "ተራዎ ደርሷል! ወንበሩ ጋር ይምጡ። 🪒");
+        // Web Push notification (if permission granted)
+        if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+          new Notification("Uncle Grooming Hub", {
+            body: "It's your turn! Your barber is ready.",
+            icon: "/favicon.ico",
+          });
+        }
+      },
+      [PUSHER_EVENTS.serviceStarted]: () => setTick(n => n + 1),
+      [PUSHER_EVENTS.serviceComplete]: () => setTick(n => n + 1),
+      [PUSHER_EVENTS.paymentReady]:   () => setTick(n => n + 1),
+    }
+  );
+
+  // Also subscribe to shop-wide queue channel for position updates
+  usePusherChannelMulti(
+    PUSHER_CHANNELS.shopQueue,
+    { [PUSHER_EVENTS.queueUpdated]: () => setTick(n => n + 1) }
+  );
+
+  // Polling fallback — 30s when Pusher not configured
   useEffect(() => {
     const id = setInterval(() => setTick(n => n + 1), 30_000);
     return () => clearInterval(id);
+  }, []);
+
+  // Request Web Push permission on mount (non-intrusive)
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+      // Don't auto-request — wait for user interaction
+    }
   }, []);
 
   if (!queue) {
@@ -238,6 +280,26 @@ export default function TrackingScreen({ token }: TrackingScreenProps) {
       {/* ── Main content ───────────────────────────────────────────────────── */}
       <main style={{ flex: 1, overflowY: "auto", padding: "24px 20px" }}>
         <div style={{ maxWidth: "400px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "16px" }}>
+
+          {/* ── Real-time notification banner ────────────────────────────── */}
+          {notification && (
+            <div style={{
+              padding: "14px 16px",
+              background: "rgba(245,158,11,0.1)",
+              border: "1px solid rgba(245,158,11,0.3)",
+              borderRadius: "12px",
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px",
+            }}>
+              <span style={{ fontSize: "14px", color: "#f59e0b", fontWeight: 600 }}>
+                {notification}
+              </span>
+              <button
+                onClick={() => setNotification(null)}
+                style={{ background: "none", border: "none", color: "rgba(245,158,11,0.5)", cursor: "pointer", fontSize: "18px", flexShrink: 0 }}
+                aria-label="Dismiss"
+              >×</button>
+            </div>
+          )}
 
           {/* ── Ticket card ─────────────────────────────────────────────── */}
           <div style={{
@@ -411,6 +473,34 @@ export default function TrackingScreen({ token }: TrackingScreenProps) {
             {elapsed < 1 ? (locale === "en" ? "just now" : "አሁን ነው") : `${elapsed} min ago`}
           </p>
 
+          {/* ── Enable notifications prompt ──────────────────────────────── */}
+          {typeof window !== "undefined" && "Notification" in window && Notification.permission === "default" && (
+            <button
+              onClick={() => {
+                Notification.requestPermission().then(perm => {
+                  if (perm === "granted") {
+                    new Notification("Uncle Grooming Hub", {
+                      body: "You'll be notified when it's your turn.",
+                      icon: "/favicon.ico",
+                    });
+                  }
+                });
+              }}
+              style={{
+                width: "100%", padding: "12px",
+                borderRadius: "9999px",
+                background: "rgba(226,214,9,0.08)",
+                border: "1px solid rgba(226,214,9,0.25)",
+                color: "#e2d609",
+                fontSize: "13px", fontWeight: 600,
+                cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+              }}
+            >
+              🔔 {locale === "en" ? "Enable turn notifications" : "ማሳወቂያ አንቃ"}
+            </button>
+          )}
+
           {/* ── Cancel button ────────────────────────────────────────────── */}
           {isCancellable && (
             <div style={{ paddingTop: "8px" }}>
@@ -466,7 +556,10 @@ export default function TrackingScreen({ token }: TrackingScreenProps) {
         flexShrink: 0,
       }}>
         <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.2)" }}>
-          {locale === "en" ? "Updates every 30 seconds" : "በ30 ሰከንድ ይዘምናል"} · Uncle Grooming Hub
+          {process.env.NEXT_PUBLIC_PUSHER_KEY
+            ? (locale === "en" ? "🟢 Live updates" : "🟢 ቀጥታ ዝማኔ")
+            : (locale === "en" ? "Updates every 30 seconds" : "በ30 ሰከንድ ይዘምናል")
+          } · Uncle Grooming Hub
         </p>
       </footer>
     </div>
