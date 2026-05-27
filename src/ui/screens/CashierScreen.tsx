@@ -432,9 +432,11 @@ function ActionPanel({ entry, barbers, sessionId, onClose }: ActionPanelProps) {
     if (!canCall || loading) return;
     setLoading("call");
     try {
+      const { journalService } = await import("@/core/journal/journal.service");
+      const nextVersion = await journalService.getNextAggregateVersion(entry.queue_entry_id);
       await callCustomer({
         aggregateId:      entry.queue_entry_id,
-        aggregateVersion: 2,
+        aggregateVersion: nextVersion,
         sessionId,
         barberId:         entry.preferred_barber_id ?? "",
       });
@@ -447,9 +449,11 @@ function ActionPanel({ entry, barbers, sessionId, onClose }: ActionPanelProps) {
     if (loading) return;
     setLoading("noshow");
     try {
+      const { journalService } = await import("@/core/journal/journal.service");
+      const nextVersion = await journalService.getNextAggregateVersion(entry.queue_entry_id);
       await cancelReservation({
         aggregateId:      entry.queue_entry_id,
-        aggregateVersion: 2,
+        aggregateVersion: nextVersion,
         sessionId,
         reasonCode:       "NO_SHOW",
       });
@@ -462,15 +466,43 @@ function ActionPanel({ entry, barbers, sessionId, onClose }: ActionPanelProps) {
     if (loading) return;
     setLoading("cancel");
     try {
+      const { journalService } = await import("@/core/journal/journal.service");
+      const nextVersion = await journalService.getNextAggregateVersion(entry.queue_entry_id);
       await cancelReservation({
         aggregateId:      entry.queue_entry_id,
-        aggregateVersion: 2,
+        aggregateVersion: nextVersion,
         sessionId,
         reasonCode:       "CUSTOMER_REQUEST",
       });
       onClose();
     } catch (e) { console.error(e); }
     finally { setLoading(null); }
+  };
+
+  const handleAddService = async (serviceId: string) => {
+    try {
+      const { journalService } = await import("@/core/journal/journal.service");
+      const nextVersion = await journalService.getNextAggregateVersion(entry.queue_entry_id);
+      await addServiceIntent({
+        aggregateId:      entry.queue_entry_id,
+        aggregateVersion: nextVersion,
+        sessionId,
+        serviceId,
+      });
+    } catch (e) { console.error(e); }
+  };
+
+  const handleRemoveService = async (serviceId: string) => {
+    try {
+      const { journalService } = await import("@/core/journal/journal.service");
+      const nextVersion = await journalService.getNextAggregateVersion(entry.queue_entry_id);
+      await removeServiceIntent({
+        aggregateId:      entry.queue_entry_id,
+        aggregateVersion: nextVersion,
+        sessionId,
+        serviceId,
+      });
+    } catch (e) { console.error(e); }
   };
 
   return (
@@ -491,9 +523,12 @@ function ActionPanel({ entry, barbers, sessionId, onClose }: ActionPanelProps) {
           </div>
         </div>
 
-        {/* Services */}
-        {entry.intents.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+        {/* Services — add/remove before EVENT 04 */}
+        <div>
+          <div style={{ fontSize: "10px", fontWeight: 700, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: "8px" }}>
+            Services {entry.is_intent_locked && <span style={{ color: "rgba(255,255,255,0.2)", fontWeight: 400 }}>(locked)</span>}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: entry.is_intent_locked ? 0 : "10px" }}>
             {entry.intents.map(id => {
               const svc = SERVICES.find(s => s.id === id);
               return (
@@ -507,16 +542,38 @@ function ActionPanel({ entry, barbers, sessionId, onClose }: ActionPanelProps) {
                   </span>
                   {!entry.is_intent_locked && (
                     <button
-                      onClick={() => removeServiceIntent({ aggregateId: entry.queue_entry_id, aggregateVersion: 2, sessionId, serviceId: id })}
-                      style={{ background: "none", border: "none", color: "rgba(226,214,9,0.5)", cursor: "pointer", fontSize: "12px", padding: "0 2px", lineHeight: 1 }}
+                      onClick={() => handleRemoveService(id)}
+                      style={{ background: "none", border: "none", color: "rgba(226,214,9,0.5)", cursor: "pointer", fontSize: "13px", padding: "0 2px", lineHeight: 1 }}
                       aria-label={`Remove ${svc?.name ?? id}`}
                     >×</button>
                   )}
                 </div>
               );
             })}
+            {entry.intents.length === 0 && (
+              <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.25)" }}>No services selected</span>
+            )}
           </div>
-        )}
+          {/* Add service buttons — only before EVENT 04 */}
+          {!entry.is_intent_locked && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              {SERVICES.filter(s => !entry.intents.includes(s.id)).map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => handleAddService(s.id)}
+                  style={{
+                    padding: "3px 10px", borderRadius: "9999px",
+                    background: "transparent", border: "1px dashed #2d3840",
+                    color: "rgba(255,255,255,0.35)", fontSize: "11px", fontWeight: 500,
+                    cursor: "pointer", transition: "all 0.15s",
+                  }}
+                >
+                  + {s.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Call to Chair — PRIMARY action */}
