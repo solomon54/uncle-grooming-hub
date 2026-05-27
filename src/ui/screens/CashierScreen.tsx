@@ -97,28 +97,70 @@ function CheckInForm({ barbers, rosterBarbers, totalToday, sessionId, onSuccess 
   const [contact,    setContact]    = useState("");
   const [intents,    setIntents]    = useState<ServiceId[]>([]);
   const [loading,    setLoading]    = useState(false);
-  const [error,      setError]      = useState("");
+  const [errors,     setErrors]     = useState<Record<string, string>>({});
   const [lastToken,  setLastToken]  = useState<string | null>(null);
 
   const toggleService = (id: ServiceId) => {
     setIntents(prev =>
       prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
     );
+    // Clear service error when one is selected
+    setErrors(e => ({ ...e, intents: "" }));
+  };
+
+  // ── Real-time field validation ──────────────────────────────────────────────
+
+  const validateName = (v: string): string => {
+    if (!v.trim()) return "Name is required";
+    if (v.trim().length < 2) return "Name must be at least 2 characters";
+    if (v.trim().length > 50) return "Name is too long";
+    if (!/^[\p{L}\s'-]+$/u.test(v.trim())) return "Name contains invalid characters";
+    return "";
+  };
+
+  const validateContact = (v: string): string => {
+    if (!v.trim()) return ""; // optional
+    const digits = v.replace(/\D/g, "");
+    // Ethiopian numbers: +251 9XX XXX XXX (12 digits with country code) or 09XX XXX XXX (10 digits)
+    if (digits.length < 9 || digits.length > 13) return "Enter a valid phone number";
+    return "";
+  };
+
+  const handleNameChange = (v: string) => {
+    setName(v);
+    setErrors(e => ({ ...e, name: validateName(v) }));
+  };
+
+  const handleContactChange = (v: string) => {
+    setContact(v);
+    setErrors(e => ({ ...e, contact: validateContact(v) }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) { setError("Customer name is required"); return; }
+
+    // Full validation before submit
+    const nameErr    = validateName(name);
+    const contactErr = validateContact(contact);
+    const intentsErr = intents.length === 0 ? "Select at least one service" : "";
+
+    if (nameErr || contactErr || intentsErr) {
+      setErrors({ name: nameErr, contact: contactErr, intents: intentsErr });
+      return;
+    }
+
     setLoading(true);
-    setError("");
+    setErrors({});
 
     try {
       const aggregateId = crypto.randomUUID();
       const token       = issueQueueToken();
 
+      const { journalService } = await import("@/core/journal/journal.service");
+
       await checkInCustomer({
         aggregateId,
-        aggregateVersion:  1,
+        aggregateVersion:  await journalService.getNextAggregateVersion(aggregateId),
         sessionId,
         customerUuid:      crypto.randomUUID(),
         preferredBarberId: barberId || null,
@@ -128,21 +170,17 @@ function CheckInForm({ barbers, rosterBarbers, totalToday, sessionId, onSuccess 
         contactHandle:     contact.trim() || undefined,
       } as Parameters<typeof checkInCustomer>[0]);
 
-      // Add service intents
-      for (let i = 0; i < intents.length; i++) {
-        await addServiceIntent({
-          aggregateId,
-          aggregateVersion: i + 2,
-          sessionId,
-          serviceId: intents[i],
-        });
+      // Add service intents with correct versions
+      for (const serviceId of intents) {
+        const nextVer = await journalService.getNextAggregateVersion(aggregateId);
+        await addServiceIntent({ aggregateId, aggregateVersion: nextVer, sessionId, serviceId });
       }
 
       setLastToken(token);
       setName(""); setBarberId(""); setContact(""); setIntents([]);
       onSuccess(token);
     } catch (err) {
-      setError("Check-in failed — please try again");
+      setErrors({ submit: "Check-in failed — please try again" });
       console.error(err);
     } finally {
       setLoading(false);
@@ -186,7 +224,6 @@ function CheckInForm({ barbers, rosterBarbers, totalToday, sessionId, onSuccess 
         )}
       </AnimatePresence>
 
-      {/* Name */}
       <div>
         <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "7px" }}>
           Customer Name *
@@ -194,19 +231,19 @@ function CheckInForm({ barbers, rosterBarbers, totalToday, sessionId, onSuccess 
         <input
           type="text"
           value={name}
-          onChange={e => { setName(e.target.value); setError(""); setLastToken(null); }}
-          placeholder="First name"
+          onChange={e => handleNameChange(e.target.value)}
+          placeholder="First name (min. 2 characters)"
           autoComplete="off"
           style={{
             width: "100%", padding: "11px 14px",
-            background: "#252f38", border: `1.5px solid ${error ? "#ef4444" : "#2d3840"}`,
+            background: "#252f38", border: `1.5px solid ${errors.name ? "#ef4444" : name.length >= 2 ? "#10b981" : "#2d3840"}`,
             borderRadius: "10px", color: "#f5f5f5", fontSize: "15px", outline: "none",
-            boxSizing: "border-box",
+            boxSizing: "border-box", transition: "border-color 0.2s",
           }}
-          onFocus={e => { e.target.style.borderColor = "#e2d609"; e.target.style.boxShadow = "0 0 0 3px rgba(226,214,9,0.1)"; }}
-          onBlur={e => { e.target.style.borderColor = error ? "#ef4444" : "#2d3840"; e.target.style.boxShadow = "none"; }}
+          onFocus={e => { if (!errors.name) e.target.style.borderColor = "#e2d609"; e.target.style.boxShadow = "0 0 0 3px rgba(226,214,9,0.1)"; }}
+          onBlur={e => { e.target.style.borderColor = errors.name ? "#ef4444" : name.length >= 2 ? "#10b981" : "#2d3840"; e.target.style.boxShadow = "none"; }}
         />
-        {error && <p style={{ fontSize: "12px", color: "#f87171", marginTop: "5px" }}>{error}</p>}
+        {errors.name && <p style={{ fontSize: "12px", color: "#f87171", marginTop: "5px" }}>{errors.name}</p>}
       </div>
 
       {/* Barber preference */}
@@ -253,8 +290,8 @@ function CheckInForm({ barbers, rosterBarbers, totalToday, sessionId, onSuccess 
 
       {/* Services */}
       <div>
-        <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "7px" }}>
-          Services
+        <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: `${errors.intents ? "#f87171" : "rgba(255,255,255,0.4)"}`, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "7px" }}>
+          Services * {intents.length > 0 && <span style={{ color: "#10b981", fontWeight: 400, textTransform: "none" }}>({intents.length} selected)</span>}
         </label>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
           {SERVICES.map(s => {
@@ -267,12 +304,12 @@ function CheckInForm({ barbers, rosterBarbers, totalToday, sessionId, onSuccess 
                 style={{
                   padding: "10px 12px", borderRadius: "10px", textAlign: "left",
                   background: selected ? "rgba(226,214,9,0.08)" : "#1e262d",
-                  border: `1.5px solid ${selected ? "#e2d609" : "#2d3840"}`,
+                  border: `1.5px solid ${selected ? "#e2d609" : errors.intents ? "rgba(239,68,68,0.3)" : "#2d3840"}`,
                   cursor: "pointer", transition: "all 0.15s",
                 }}
               >
                 <div style={{ fontSize: "13px", fontWeight: 600, color: selected ? "#e2d609" : "#f5f5f5" }}>
-                  {s.name}
+                  {selected && "✓ "}{s.name}
                 </div>
                 <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.35)", marginTop: "2px" }}>
                   {s.price.toLocaleString()} ETB
@@ -281,6 +318,7 @@ function CheckInForm({ barbers, rosterBarbers, totalToday, sessionId, onSuccess 
             );
           })}
         </div>
+        {errors.intents && <p style={{ fontSize: "12px", color: "#f87171", marginTop: "6px" }}>{errors.intents}</p>}
         {intents.length > 0 && (
           <div style={{ marginTop: "8px", fontSize: "12px", color: "rgba(255,255,255,0.4)" }}>
             Total: <span style={{ color: "#e2d609", fontWeight: 700 }}>
@@ -293,28 +331,32 @@ function CheckInForm({ barbers, rosterBarbers, totalToday, sessionId, onSuccess 
       {/* Contact (optional) */}
       <div>
         <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "7px" }}>
-          Phone / Contact <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional — for queue alerts)</span>
+          Phone <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional — for queue alerts)</span>
         </label>
         <input
           type="tel"
           value={contact}
-          onChange={e => setContact(e.target.value)}
-          placeholder="+251 9XX XXX XXX"
+          onChange={e => handleContactChange(e.target.value)}
+          placeholder="+251 9XX XXX XXX or 09XX XXX XXX"
+          inputMode="tel"
           style={{
             width: "100%", padding: "11px 14px",
-            background: "#252f38", border: "1.5px solid #2d3840",
+            background: "#252f38", border: `1.5px solid ${errors.contact ? "#ef4444" : contact && !errors.contact ? "#10b981" : "#2d3840"}`,
             borderRadius: "10px", color: "#f5f5f5", fontSize: "15px", outline: "none",
-            boxSizing: "border-box",
+            boxSizing: "border-box", transition: "border-color 0.2s",
           }}
-          onFocus={e => { e.target.style.borderColor = "#e2d609"; e.target.style.boxShadow = "0 0 0 3px rgba(226,214,9,0.1)"; }}
-          onBlur={e => { e.target.style.borderColor = "#2d3840"; e.target.style.boxShadow = "none"; }}
+          onFocus={e => { e.target.style.borderColor = errors.contact ? "#ef4444" : "#e2d609"; e.target.style.boxShadow = "0 0 0 3px rgba(226,214,9,0.1)"; }}
+          onBlur={e => { e.target.style.borderColor = errors.contact ? "#ef4444" : contact && !errors.contact ? "#10b981" : "#2d3840"; e.target.style.boxShadow = "none"; }}
         />
+        {errors.contact && <p style={{ fontSize: "12px", color: "#f87171", marginTop: "5px" }}>{errors.contact}</p>}
       </div>
+
+      {errors.submit && <p style={{ fontSize: "13px", color: "#f87171", textAlign: "center" }}>{errors.submit}</p>}
 
       {/* Submit */}
       <button
         type="submit"
-        disabled={loading}
+        disabled={loading || !!errors.name || !!errors.contact}
         style={{
           width: "100%", padding: "14px",
           borderRadius: "9999px",
@@ -424,9 +466,13 @@ interface ActionPanelProps {
 
 function ActionPanel({ entry, barbers, sessionId, onClose }: ActionPanelProps) {
   const [loading, setLoading] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<"noshow" | "cancel" | null>(null);
+  // When preferred is "Any Available", cashier must pick which barber
+  const [selectedBarberId, setSelectedBarberId] = useState(entry.preferred_barber_id ?? "");
 
-  const preferredLane = barbers.find(b => b.barber_id === entry.preferred_barber_id);
-  const canCall = !entry.preferred_barber_id || preferredLane?.status === "AVAILABLE";
+  const preferredLane = barbers.find(b => b.barber_id === selectedBarberId);
+  const availableBarbers = barbers.filter(b => b.status === "AVAILABLE");
+  const canCall = selectedBarberId !== "" && preferredLane?.status === "AVAILABLE";
 
   const handleCall = async () => {
     if (!canCall || loading) return;
@@ -438,7 +484,7 @@ function ActionPanel({ entry, barbers, sessionId, onClose }: ActionPanelProps) {
         aggregateId:      entry.queue_entry_id,
         aggregateVersion: nextVersion,
         sessionId,
-        barberId:         entry.preferred_barber_id ?? "",
+        barberId:         selectedBarberId,
       });
       onClose();
     } catch (e) { console.error(e); }
@@ -576,6 +622,46 @@ function ActionPanel({ entry, barbers, sessionId, onClose }: ActionPanelProps) {
         </div>
       </div>
 
+      {/* Barber selector — shown when "Any Available" or to override */}
+      {(!entry.preferred_barber_id || entry.status === "WAITING") && (
+        <div>
+          <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "7px" }}>
+            Assign to Barber
+          </label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+            {barbers.map(b => (
+              <button
+                key={b.barber_id}
+                type="button"
+                onClick={() => setSelectedBarberId(b.barber_id)}
+                disabled={b.status !== "AVAILABLE"}
+                style={{
+                  display: "flex", alignItems: "center", gap: "6px",
+                  padding: "7px 12px", borderRadius: "9999px",
+                  background: selectedBarberId === b.barber_id ? "rgba(226,214,9,0.1)" : "transparent",
+                  border: `1.5px solid ${selectedBarberId === b.barber_id ? "#e2d609" : "#2d3840"}`,
+                  color: b.status === "AVAILABLE"
+                    ? selectedBarberId === b.barber_id ? "#e2d609" : "rgba(255,255,255,0.6)"
+                    : "rgba(255,255,255,0.2)",
+                  fontSize: "12px", fontWeight: 600,
+                  cursor: b.status === "AVAILABLE" ? "pointer" : "not-allowed",
+                  transition: "all 0.15s",
+                }}
+              >
+                <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: b.status === "AVAILABLE" ? "#10b981" : "#374151", flexShrink: 0 }} />
+                {b.barber_name}
+                {b.status !== "AVAILABLE" && <span style={{ fontSize: "10px", opacity: 0.5 }}>({b.status.toLowerCase()})</span>}
+              </button>
+            ))}
+          </div>
+          {availableBarbers.length === 0 && (
+            <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.3)", marginTop: "6px" }}>
+              No barbers available right now
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Call to Chair — PRIMARY action */}
       <button
         onClick={handleCall}
@@ -601,37 +687,80 @@ function ActionPanel({ entry, barbers, sessionId, onClose }: ActionPanelProps) {
         </p>
       )}
 
-      {/* Secondary actions */}
-      <div style={{ display: "flex", gap: "8px" }}>
-        <button
-          onClick={handleNoShow}
-          disabled={!!loading}
-          style={{
-            flex: 1, padding: "11px",
-            borderRadius: "9999px",
-            background: "transparent", color: "rgba(245,158,11,0.7)",
-            border: "1px solid rgba(245,158,11,0.25)",
-            fontSize: "13px", fontWeight: 600, cursor: "pointer",
-            transition: "all 0.2s",
-          }}
-        >
-          {loading === "noshow" ? "…" : "No-Show"}
-        </button>
-        <button
-          onClick={handleCancel}
-          disabled={!!loading}
-          style={{
-            flex: 1, padding: "11px",
-            borderRadius: "9999px",
-            background: "transparent", color: "rgba(239,68,68,0.7)",
-            border: "1px solid rgba(239,68,68,0.2)",
-            fontSize: "13px", fontWeight: 600, cursor: "pointer",
-            transition: "all 0.2s",
-          }}
-        >
-          {loading === "cancel" ? "…" : "Cancel"}
-        </button>
-      </div>
+      {/* Secondary actions — with confirmation */}
+      {confirm ? (
+        /* Confirmation dialog */
+        <div style={{
+          padding: "16px", borderRadius: "12px",
+          background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.25)",
+        }}>
+          <p style={{ fontSize: "14px", fontWeight: 700, color: "#f87171", marginBottom: "6px" }}>
+            {confirm === "noshow" ? "⚠️ Mark as No-Show?" : "⚠️ Cancel this spot?"}
+          </p>
+          <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", marginBottom: "14px", lineHeight: 1.5 }}>
+            {confirm === "noshow"
+              ? "This records that the customer was called but didn't appear. This action cannot be undone and counts toward their no-show history."
+              : "This removes the customer from the queue at their request. This action cannot be undone."}
+          </p>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              onClick={() => setConfirm(null)}
+              style={{
+                flex: 1, padding: "10px",
+                borderRadius: "9999px", background: "transparent",
+                border: "1px solid #2d3840", color: "rgba(255,255,255,0.5)",
+                fontSize: "13px", fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              Keep in Queue
+            </button>
+            <button
+              onClick={confirm === "noshow" ? handleNoShow : handleCancel}
+              disabled={!!loading}
+              style={{
+                flex: 1, padding: "10px",
+                borderRadius: "9999px", background: "rgba(239,68,68,0.15)",
+                border: "1px solid rgba(239,68,68,0.4)", color: "#f87171",
+                fontSize: "13px", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer",
+              }}
+            >
+              {loading ? "…" : confirm === "noshow" ? "Yes, No-Show" : "Yes, Cancel"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* Action buttons */
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button
+            onClick={() => setConfirm("noshow")}
+            style={{
+              flex: 1, padding: "11px",
+              borderRadius: "9999px",
+              background: "transparent", color: "rgba(245,158,11,0.8)",
+              border: "1px solid rgba(245,158,11,0.25)",
+              fontSize: "13px", fontWeight: 600, cursor: "pointer",
+              transition: "all 0.2s",
+            }}
+            title="Customer was called but didn't appear"
+          >
+            Didn't Show Up
+          </button>
+          <button
+            onClick={() => setConfirm("cancel")}
+            style={{
+              flex: 1, padding: "11px",
+              borderRadius: "9999px",
+              background: "transparent", color: "rgba(239,68,68,0.7)",
+              border: "1px solid rgba(239,68,68,0.2)",
+              fontSize: "13px", fontWeight: 600, cursor: "pointer",
+              transition: "all 0.2s",
+            }}
+            title="Customer asked to leave the queue"
+          >
+            Customer Left
+          </button>
+        </div>
+      )}
 
       <button
         onClick={onClose}
