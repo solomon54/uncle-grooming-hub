@@ -58,13 +58,16 @@ type Tab = "lane" | "schedule";
 // ─── AVAILABLE State ──────────────────────────────────────────────────────────
 
 interface AvailableStateProps {
-  lane:      BarberLaneView;
-  nextUp?:   QueueEntryView;
-  sessionId: string;
-  onBreak:   () => void;
+  lane:         BarberLaneView;
+  nextUp?:      QueueEntryView;
+  onSetAvailable: () => void;
+  onBreak:      () => void;
+  loading:      string | null;
 }
 
-function AvailableState({ lane, nextUp, sessionId, onBreak }: AvailableStateProps) {
+function AvailableState({ lane, nextUp, onSetAvailable, onBreak, loading }: AvailableStateProps) {
+  const isOffline = lane.status === "OFFLINE" || lane.status === "ON_BREAK";
+
   return (
     <motion.div
       key="available"
@@ -72,34 +75,63 @@ function AvailableState({ lane, nextUp, sessionId, onBreak }: AvailableStateProp
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "32px", padding: "48px 24px" }}
+      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "28px", padding: "40px 24px" }}
     >
       {/* Status indicator */}
       <div style={{ textAlign: "center" }}>
         <div style={{ position: "relative", display: "inline-flex", marginBottom: "20px" }}>
           <div style={{
             width: "80px", height: "80px", borderRadius: "50%",
-            background: "rgba(16,185,129,0.12)", border: "2px solid rgba(16,185,129,0.3)",
+            background: isOffline ? "rgba(107,114,128,0.12)" : "rgba(16,185,129,0.12)",
+            border: `2px solid ${isOffline ? "rgba(107,114,128,0.3)" : "rgba(16,185,129,0.3)"}`,
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <div style={{ width: "20px", height: "20px", borderRadius: "50%", background: "#10b981" }} />
+            <div style={{
+              width: "20px", height: "20px", borderRadius: "50%",
+              background: isOffline ? "#6b7280" : "#10b981",
+            }} />
           </div>
-          <div style={{
-            position: "absolute", inset: "-4px", borderRadius: "50%",
-            border: "2px solid rgba(16,185,129,0.15)",
-            animation: "ping 2s cubic-bezier(0,0,0.2,1) infinite",
-          }} />
+          {!isOffline && (
+            <div style={{
+              position: "absolute", inset: "-4px", borderRadius: "50%",
+              border: "2px solid rgba(16,185,129,0.15)",
+              animation: "ping 2s cubic-bezier(0,0,0.2,1) infinite",
+            }} />
+          )}
         </div>
-        <h2 style={{ fontSize: "clamp(22px, 3vw, 28px)", fontWeight: 900, color: "#f5f5f5", marginBottom: "8px" }}>
-          Ready for Next Client
+        <h2 style={{ fontSize: "clamp(20px, 3vw, 26px)", fontWeight: 900, color: "#f5f5f5", marginBottom: "8px" }}>
+          {isOffline
+            ? lane.status === "ON_BREAK" ? "On Break" : "Offline"
+            : "Ready for Next Client"}
         </h2>
         <p style={{ fontSize: "14px", color: "rgba(255,255,255,0.4)" }}>
-          {lane.barber_name} · Lane available
+          {lane.barber_name}
+          {lane.status === "ON_BREAK" && " · Taking a break"}
+          {lane.status === "OFFLINE" && " · Not available"}
+          {lane.status === "AVAILABLE" && " · Lane open"}
         </p>
       </div>
 
-      {/* Next up card */}
-      {nextUp && (
+      {/* Set Available — PRIMARY when offline/on break */}
+      {isOffline && (
+        <button
+          onClick={onSetAvailable}
+          disabled={loading === "available"}
+          style={{
+            padding: "14px 36px", borderRadius: "9999px",
+            background: loading === "available" ? "rgba(226,214,9,0.4)" : "#e2d609",
+            color: "#0f1317", fontSize: "15px", fontWeight: 900,
+            border: "none", cursor: loading === "available" ? "not-allowed" : "pointer",
+            boxShadow: "0 0 28px rgba(226,214,9,0.25)",
+            transition: "all 0.2s ease",
+          }}
+        >
+          {loading === "available" ? "Setting available…" : "Set Available →"}
+        </button>
+      )}
+
+      {/* Next up card — only when available */}
+      {!isOffline && nextUp && (
         <div style={{
           width: "100%", maxWidth: "360px",
           padding: "20px", borderRadius: "14px",
@@ -123,19 +155,22 @@ function AvailableState({ lane, nextUp, sessionId, onBreak }: AvailableStateProp
         </div>
       )}
 
-      {/* Break button */}
-      <button
-        onClick={onBreak}
-        style={{
-          padding: "12px 28px", borderRadius: "9999px",
-          background: "transparent", color: "rgba(255,255,255,0.5)",
-          fontSize: "14px", fontWeight: 600,
-          border: "1px solid rgba(255,255,255,0.15)", cursor: "pointer",
-          transition: "all 0.2s ease",
-        }}
-      >
-        Go on Break
-      </button>
+      {/* Go on Break — only when available */}
+      {!isOffline && (
+        <button
+          onClick={onBreak}
+          disabled={loading === "break"}
+          style={{
+            padding: "12px 28px", borderRadius: "9999px",
+            background: "transparent", color: "rgba(255,255,255,0.5)",
+            fontSize: "14px", fontWeight: 600,
+            border: "1px solid rgba(255,255,255,0.15)", cursor: "pointer",
+            transition: "all 0.2s ease",
+          }}
+        >
+          {loading === "break" ? "…" : "Go on Break"}
+        </button>
+      )}
 
       <style>{`
         @keyframes ping {
@@ -342,13 +377,13 @@ function InServiceState({ customer, onComplete }: InServiceStateProps) {
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 interface ScheduleTabProps {
-  rules:     ScheduleRule[];
-  barberId:  string;
-  sessionId: string;
+  rules:      ScheduleRule[];
+  barberId:   string;
+  session:    import("@/core/session/session.types").ActiveSession;
   aggVersion: number;
 }
 
-function ScheduleTab({ rules, barberId, sessionId, aggVersion }: ScheduleTabProps) {
+function ScheduleTab({ rules, barberId, session, aggVersion }: ScheduleTabProps) {
   const [saving, setSaving] = useState(false);
   const [localRules, setLocalRules] = useState<ScheduleRule[]>(() =>
     DAYS.map((_, i) => {
@@ -372,7 +407,7 @@ function ScheduleTab({ rules, barberId, sessionId, aggVersion }: ScheduleTabProp
           startTime:        rule.start_time,
           endTime:          rule.end_time,
           isActive:         rule.is_active,
-        }, { session_id: sessionId, actor_id: barberId, role: "BARBER", actor_name: "", terminal_id: "", opened_at: "", is_first_login: false });
+        }, session);
       }
     } finally {
       setSaving(false);
@@ -535,9 +570,22 @@ export default function BarberDashboardScreen({ laneId }: BarberDashboardScreenP
     if (loading) return;
     setLoading("available");
     try {
-      // getNextAggregateVersion returns 1 for new aggregates (first EVENT 02)
       const { journalService } = await import("@/core/journal/journal.service");
       const nextVersion = await journalService.getNextAggregateVersion(laneId);
+      await setAvailable({ barberId: laneId, aggregateVersion: nextVersion }, session);
+    } finally { setLoading(null); }
+  };
+
+  const handleGoOnBreak = async () => {
+    if (loading) return;
+    setLoading("break");
+    try {
+      // EVENT 02 with ON_BREAK status — barber controls their own availability
+      const { journalService } = await import("@/core/journal/journal.service");
+      const nextVersion = await journalService.getNextAggregateVersion(laneId);
+      // Reuse setAvailable action but the BarberLane projection will need
+      // to handle a status payload. For now emit EVENT 02 — projection
+      // maps it to AVAILABLE. Phase 2: add explicit ON_BREAK event type.
       await setAvailable({ barberId: laneId, aggregateVersion: nextVersion }, session);
     } finally { setLoading(null); }
   };
@@ -604,10 +652,11 @@ export default function BarberDashboardScreen({ laneId }: BarberDashboardScreenP
                 ) : (
                   <AvailableState
                     key="available"
-                    lane={lane ?? { barber_id: laneId, barber_name: laneId, status: "OFFLINE", schedule_rules: [] }}
+                    lane={lane ?? { barber_id: laneId, barber_name: session.actor_name, status: "OFFLINE", schedule_rules: [] }}
                     nextUp={nextUp}
-                    sessionId={session.session_id}
-                    onBreak={handleSetAvailable}
+                    onSetAvailable={handleSetAvailable}
+                    onBreak={handleGoOnBreak}
+                    loading={loading}
                   />
                 )}
               </AnimatePresence>
@@ -638,7 +687,7 @@ export default function BarberDashboardScreen({ laneId }: BarberDashboardScreenP
               <ScheduleTab
                 rules={lane?.schedule_rules ?? []}
                 barberId={laneId}
-                sessionId={session.session_id}
+                session={session}
                 aggVersion={aggVersion}
               />
             </motion.div>
