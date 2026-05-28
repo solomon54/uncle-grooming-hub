@@ -22,9 +22,10 @@ import type { ActiveSession } from "@/core/session/session.types";
 // ─── Role badge colors ────────────────────────────────────────────────────────
 
 const ROLE_STYLE: Record<string, { bg: string; color: string; label: string }> = {
-  ADMIN:   { bg: "rgba(249,115,22,0.12)", color: "#fb923c", label: "Admin"   },
-  CASHIER: { bg: "rgba(14,165,233,0.12)", color: "#38bdf8", label: "Cashier" },
-  BARBER:  { bg: "rgba(20,184,166,0.12)", color: "#2dd4bf", label: "Barber"  },
+  SYSTEM_OWNER: { bg: "rgba(251,146,60,0.15)",  color: "#fb923c", label: "System Owner" },
+  ADMIN:        { bg: "rgba(226,214,9,0.12)",   color: "#e2d609", label: "Admin"        },
+  CASHIER:      { bg: "rgba(14,165,233,0.12)",  color: "#38bdf8", label: "Cashier"      },
+  BARBER:       { bg: "rgba(20,184,166,0.12)",  color: "#2dd4bf", label: "Barber"       },
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -39,7 +40,7 @@ interface TopBarProps {
 export function TopBar({ session, onLogout }: TopBarProps) {
   const router              = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
-  const roleStyle           = ROLE_STYLE[session.role] ?? ROLE_STYLE.CASHIER;
+  const roleStyle = ROLE_STYLE[session.role] ?? { bg: "rgba(107,114,128,0.12)", color: "#9ca3af", label: session.role };
 
   const handleLogout = async () => {
     if (loggingOut) return;
@@ -99,6 +100,7 @@ export function TopBar({ session, onLogout }: TopBarProps) {
         <SyncIndicator state="verified" compact />
 
         <button
+          type="button"
           onClick={handleLogout}
           disabled={loggingOut}
           style={{

@@ -31,7 +31,7 @@ const PIN_LENGTH = 6;
 
 const ROLE_REDIRECT: Record<string, string> = {
   CASHIER:      "/cashier",
-  BARBER:       "/barber",
+  BARBER:       "/barber/lane_001", // fallback — overridden below when barber_id is known
   ADMIN:        "/admin",
   SYSTEM_OWNER: "/admin",
 };
@@ -244,11 +244,15 @@ export default function LoginScreen() {
       }
       setStatus("success");
       setTimeout(() => {
-        router.replace(
-          session.role === "BARBER" && session.barber_id
-            ? `/barber/${session.barber_id}`
-            : ROLE_REDIRECT[session.role] ?? "/cashier"
-        );
+        // First login → force PIN change before accessing the system
+        if (session.is_first_login) {
+          router.replace("/change-pin");
+          return;
+        }
+        const redirect = session.role === "BARBER" && session.barber_id
+          ? `/barber/${session.barber_id}`
+          : ROLE_REDIRECT[session.role] ?? "/cashier";
+        router.replace(redirect);
       }, 500);
     } catch {
       setStatus("error");

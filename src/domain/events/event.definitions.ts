@@ -245,7 +245,67 @@ export interface ReservationExpiredEvent
 }
 
 // ==========================================
-// 5. Union Type for All Events
+// 5. Staff Account Management Events (ECS v1.4 — AGENT.md §12)
+// ==========================================
+
+/** ECS EVENT 26 — CUSTOMER_NOTIFICATION_SENT (Cloud ONLY) */
+export interface CustomerNotificationSentEvent
+  extends TypedEvent<{
+    customer_uuid:     string;
+    channel:           "sms" | "telegram" | "push";
+    notification_type: string;
+    message_ref:       string;
+  }> {
+  event_type: "CUSTOMER_NOTIFICATION_SENT";
+}
+
+/** ECS EVENT 27 — STAFF_ACCOUNT_CREATED */
+export interface StaffAccountCreatedEvent
+  extends TypedEvent<{
+    actor_uuid:   string;
+    role:         "BARBER" | "CASHIER" | "ADMIN";
+    display_name: string;
+  }> {
+  event_type: "STAFF_ACCOUNT_CREATED";
+}
+
+/** ECS EVENT 28 — STAFF_PIN_CHANGED */
+export interface StaffPinChangedEvent
+  extends TypedEvent<{
+    actor_uuid: string;
+    pin_hash:   string;
+  }> {
+  event_type: "STAFF_PIN_CHANGED";
+}
+
+/** ECS EVENT 29 — STAFF_ACCOUNT_DEACTIVATED */
+export interface StaffAccountDeactivatedEvent
+  extends TypedEvent<{
+    target_actor_id: string;
+    reason:          string;
+  }> {
+  event_type: "STAFF_ACCOUNT_DEACTIVATED";
+}
+
+/** ECS EVENT 30 — STAFF_ACCOUNT_REACTIVATED */
+export interface StaffAccountReactivatedEvent
+  extends TypedEvent<{
+    target_actor_id: string;
+  }> {
+  event_type: "STAFF_ACCOUNT_REACTIVATED";
+}
+
+/** ECS EVENT 31 — TERMINAL_PIN_CHANGED */
+export interface TerminalPinChangedEvent
+  extends TypedEvent<{
+    terminal_id:  string;
+    new_pin_hash: string;
+  }> {
+  event_type: "TERMINAL_PIN_CHANGED";
+}
+
+// ==========================================
+// 6. Union Type for All Events
 // ==========================================
 
 export type AllEvents =
@@ -272,4 +332,10 @@ export type AllEvents =
   | ReconciliationAnomalyDetectedEvent
   | LocalSnapshotCommittedEvent
   | TerminalRecoveryCompletedEvent
-  | ReservationExpiredEvent;
+  | ReservationExpiredEvent
+  | CustomerNotificationSentEvent
+  | StaffAccountCreatedEvent
+  | StaffPinChangedEvent
+  | StaffAccountDeactivatedEvent
+  | StaffAccountReactivatedEvent
+  | TerminalPinChangedEvent;

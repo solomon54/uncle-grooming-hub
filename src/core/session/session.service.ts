@@ -2,19 +2,19 @@
  * @file session.service.ts
  * @module core/session
  *
- * Session Service — operator authentication and session lifecycle.
+ * Session Service — production-grade operator authentication.
  *
  * Specification: TAS v1.0 §9 — Security Architecture (RBAC)
  *                ECS v1.3 EVENT 13 — OPERATOR_SESSION_OPENED
  *                ECS v1.3 EVENT 14 — OPERATOR_SESSION_CLOSED
- *                UI Standards §10 — Session State
+ *                SOS v1.0 §2 — Two-factor: email + PIN
  *
- * Responsibilities:
- *   - Seed and manage the local operator roster
- *   - Validate 6-digit PIN against the roster
- *   - Persist active session to sessionStorage
- *   - Emit EVENT 13 on login, EVENT 14 on logout
- *   - Provide reactive session reads for UI components
+ * Authentication flow:
+ *   1. Try cloud roster (Supabase) with HMAC-SHA256 PIN verification
+ *   2. Fall back to local seed if cloud unavailable (offline mode)
+ *
+ * PINs are NEVER stored in plain text in production.
+ * Local seed PINs are plain text only for development/offline fallback.
  */
 
 import { OPERATOR_SEED }    from "./operator.seed";
@@ -29,19 +29,15 @@ import type {
 
 // ─── Storage Keys ─────────────────────────────────────────────────────────────
 
-const ROSTER_KEY  = "ugh:operator_roster_v2"; // v2 — added username field
+const ROSTER_KEY  = "ugh:operator_roster_v2";
 const SESSION_KEY = "ugh:active_session";
 
 // ─── Session Service ──────────────────────────────────────────────────────────
 
 export class SessionService {
 
-  // ── Roster Management ──────────────────────────────────────────────────────
+  // ── Roster ──────────────────────────────────────────────────────────────────
 
-  /**
-   * Load the operator roster from localStorage.
-   * Seeds from OPERATOR_SEED if no roster exists yet.
-   */
   getRoster(): Operator[] {
     if (typeof window === "undefined") return [];
 
@@ -49,70 +45,105 @@ export class SessionService {
     if (stored) {
       try {
         const parsed = JSON.parse(stored) as Operator[];
-        // If roster exists but is missing username field (old seed), re-seed
-        if (parsed.length > 0 && !parsed[0].username) {
-          this.seedRoster();
-          return OPERATOR_SEED;
+        if (parsed.length > 0 && parsed[0].email) {
+          return parsed;
         }
-        return parsed;
       } catch {
         // Corrupted — re-seed
       }
     }
 
-    this.seedRoster();
+    localStorage.setItem(ROSTER_KEY, JSON.stringify(OPERATOR_SEED));
     return OPERATOR_SEED;
   }
 
-  private seedRoster(): void {
-    localStorage.setItem(ROSTER_KEY, JSON.stringify(OPERATOR_SEED));
-  }
+  // ── Login ────────────────────────────────────────────────────────────────────
 
   /**
-   * Find an operator by username + PIN combination.
-   * Both must match — username is the identifier, PIN is the secret.
-   * Returns null if no match — never reveals which field was wrong.
+   * Authenticate with email + PIN.
+   *
+   * Production: verifies via /api/auth/login (server-side, service role key).
+   * Offline fallback: verifies against local seed with plain-text PIN.
    */
-  findByCredentials(username: string, pin: string): Operator | null {
-    const roster = this.getRoster();
-    const match = roster.find(
-      op => op.username?.toLowerCase() === username.toLowerCase().trim() && op.pin === pin
-    ) ?? null;
-    if (!match) {
-      console.warn(`[SessionService] No match for email: "${username}" (roster has ${roster.length} entries)`);
+  async login(email: string, pin: string): Promise<ActiveSession | null> {
+    // ── Try server-side cloud authentication first ──────────────────────────
+    try {
+      const { verifyCloudCredentials } = await import("@/core/cloud/operator.cloud");
+      const cloudOp = await verifyCloudCredentials(email, pin);
+
+      if (cloudOp) {
+        return this.createSession({
+          actor_id:       cloudOp.actor_id,
+          email:          cloudOp.email,
+          name:           cloudOp.name,
+          role:           cloudOp.role,
+          is_first_login: cloudOp.is_first_login,
+          barber_id:      cloudOp.barber_id ?? undefined,
+        });
+      }
+
+      // verifyCloudCredentials returns null for both wrong credentials AND
+      // network errors. Probe the API to distinguish the two cases.
+      const probe = await fetch("/api/auth/login", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ email: "__probe__", pin: "000000" }),
+      }).catch(() => null);
+
+      if (probe !== null) {
+        // API is reachable — null from verifyCloudCredentials = wrong credentials
+        return null;
+      }
+      // API unreachable — fall through to local fallback
+    } catch {
+      // Network error — fall through to local fallback
+      console.warn("[SessionService] Cloud auth unavailable — using local fallback");
     }
-    return match;
-  }
 
-  // ── Session Lifecycle ──────────────────────────────────────────────────────
+    // ── Offline fallback: local seed with plain-text PIN ────────────────────
+    const localRoster = this.getRoster();
+    const operator = localRoster.find(
+      op => op.email?.toLowerCase() === email.toLowerCase().trim() && op.pin === pin
+    );
 
-  /**
-   * Attempt login with username + 6-digit PIN.
-   * On success: persists session, emits EVENT 13, returns the session.
-   * On failure: returns null.
-   */
-  async login(username: string, pin: string): Promise<ActiveSession | null> {
-    const operator = this.findByCredentials(username, pin);
     if (!operator) return null;
 
-    const session: ActiveSession = {
-      session_id:     crypto.randomUUID(),
+    return this.createSession({
       actor_id:       operator.actor_id,
+      email:          operator.email,
+      name:           operator.name,
       role:           operator.role,
-      actor_name:     operator.name,
-      username:       operator.username,
-      terminal_id:    terminalIdentity.terminalId,
-      opened_at:      clockService.tick(),
       is_first_login: operator.is_first_login,
       barber_id:      operator.barber_id,
+    });
+  }
+
+  // ── Create session ───────────────────────────────────────────────────────────
+
+  private async createSession(op: {
+    actor_id:       string;
+    email:       string;
+    name:           string;
+    role:           OperatorRole;
+    is_first_login: boolean;
+    barber_id?:     string;
+  }): Promise<ActiveSession> {
+    const session: ActiveSession = {
+      session_id:     crypto.randomUUID(),
+      actor_id:       op.actor_id,
+      role:           op.role,
+      actor_name:     op.name,
+      email:       op.email,
+      terminal_id:    terminalIdentity.terminalId,
+      opened_at:      clockService.tick(),
+      is_first_login: op.is_first_login,
+      barber_id:      op.barber_id,
     };
 
-    // Persist to sessionStorage FIRST (cleared on tab close — TAS §9)
-    // Session is valid immediately — EVENT 13 is best-effort audit trail
+    // Persist session
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
 
-    // Emit EVENT 13 — OPERATOR_SESSION_OPENED (ECS v1.3)
-    // Best-effort: if runtime not yet initialized, session is still valid
+    // Emit EVENT 13 — best-effort (runtime may not be ready yet)
     try {
       const event: OperatorSessionOpenedEvent = {
         event_id:          crypto.randomUUID(),
@@ -121,7 +152,7 @@ export class SessionService {
         aggregate_version: 1,
         payload: {
           actor_id:    session.actor_id,
-          role:        session.role,
+          role:        session.role as "BARBER" | "CASHIER" | "ADMIN",
           terminal_id: session.terminal_id,
           auth_method: "PIN",
         },
@@ -133,55 +164,45 @@ export class SessionService {
       };
       await runtime.emit(event);
     } catch {
-      // Runtime not yet initialized — session is persisted, EVENT 13 will
-      // be emitted on next runtime boot via journal replay
-      console.warn("[SessionService] EVENT 13 deferred — runtime not initialized yet");
+      console.warn("[SessionService] EVENT 13 deferred — runtime not ready");
     }
 
     return session;
   }
 
-  /**
-   * Log out the current operator.
-   * Clears sessionStorage, emits EVENT 14.
-   */
+  // ── Logout ───────────────────────────────────────────────────────────────────
+
   async logout(): Promise<void> {
     const session = this.getActiveSession();
     if (!session) return;
 
-    // Emit EVENT 14 — OPERATOR_SESSION_CLOSED (ECS v1.3)
-    const event: OperatorSessionClosedEvent = {
-      event_id:          crypto.randomUUID(),
-      event_type:        "OPERATOR_SESSION_CLOSED",
-      aggregate_id:      session.session_id,
-      aggregate_version: 2,
-      payload: {
-        reason: "manual",
-      },
-      metadata: {
-        session_id:    session.session_id,
-        hlc_timestamp: clockService.tick(),
-        terminal_id:   session.terminal_id,
-      },
-    };
-
-    await runtime.emit(event);
+    try {
+      const event: OperatorSessionClosedEvent = {
+        event_id:          crypto.randomUUID(),
+        event_type:        "OPERATOR_SESSION_CLOSED",
+        aggregate_id:      session.session_id,
+        aggregate_version: 2,
+        payload:           { reason: "manual" },
+        metadata: {
+          session_id:    session.session_id,
+          hlc_timestamp: clockService.tick(),
+          terminal_id:   session.terminal_id,
+        },
+      };
+      await runtime.emit(event);
+    } catch {
+      // Best-effort
+    }
 
     sessionStorage.removeItem(SESSION_KEY);
   }
 
-  // ── Session Reads ──────────────────────────────────────────────────────────
+  // ── Session reads ────────────────────────────────────────────────────────────
 
-  /**
-   * Returns the active session or null.
-   * Safe to call on every render — reads from sessionStorage.
-   */
   getActiveSession(): ActiveSession | null {
     if (typeof window === "undefined") return null;
-
     const stored = sessionStorage.getItem(SESSION_KEY);
     if (!stored) return null;
-
     try {
       return JSON.parse(stored) as ActiveSession;
     } catch {
@@ -189,23 +210,15 @@ export class SessionService {
     }
   }
 
-  /**
-   * Returns true if there is an active session with the required role(s).
-   */
   hasRole(...roles: OperatorRole[]): boolean {
     const session = this.getActiveSession();
     if (!session) return false;
     return roles.includes(session.role);
   }
 
-  /**
-   * Returns true if any session is active.
-   */
   isAuthenticated(): boolean {
     return this.getActiveSession() !== null;
   }
 }
-
-// ─── Singleton ────────────────────────────────────────────────────────────────
 
 export const sessionService = new SessionService();

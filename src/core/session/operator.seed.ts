@@ -5,9 +5,9 @@
  * Operator Roster Seed — Phase 1 placeholder.
  *
  * Specification: PRD §2.1 — Actor Definitions
- *                SOS v1.0 §2 — Two-factor: username + PIN
+ *                SOS v1.0 §2 — Two-factor: email + PIN
  *
- * Login: username (unique) + 6-digit PIN.
+ * Login: email (unique) + 6-digit PIN.
  * Username uniqueness prevents PIN collision between operators.
  *
  * @security PINs are plain strings in Phase 1 (local-only, no network).
@@ -20,7 +20,7 @@ import type { Operator } from "./session.types";
 export const OPERATOR_SEED: Operator[] = [
   {
     actor_id:       "actor_owner_001",
-    username:       "owner@unclegrooming.com",
+    email:       "owner@unclegrooming.com",
     name:           "System Owner",
     role:           "SYSTEM_OWNER",
     pin:            "000000",
@@ -28,7 +28,7 @@ export const OPERATOR_SEED: Operator[] = [
   },
   {
     actor_id:       "actor_admin_001",
-    username:       "admin@unclegrooming.com",
+    email:       "admin@unclegrooming.com",
     name:           "Shop Admin",
     role:           "ADMIN",
     pin:            "111111",
@@ -36,7 +36,7 @@ export const OPERATOR_SEED: Operator[] = [
   },
   {
     actor_id:       "actor_cashier_001",
-    username:       "cashier@unclegrooming.com",
+    email:       "cashier@unclegrooming.com",
     name:           "Cashier",
     role:           "CASHIER",
     pin:            "222222",
@@ -44,7 +44,7 @@ export const OPERATOR_SEED: Operator[] = [
   },
   {
     actor_id:       "actor_barber_001",
-    username:       "barber1@unclegrooming.com",
+    email:       "barber1@unclegrooming.com",
     name:           "Barber 1",
     role:           "BARBER",
     pin:            "333333",
@@ -53,7 +53,7 @@ export const OPERATOR_SEED: Operator[] = [
   },
   {
     actor_id:       "actor_barber_002",
-    username:       "barber2@unclegrooming.com",
+    email:       "barber2@unclegrooming.com",
     name:           "Barber 2",
     role:           "BARBER",
     pin:            "444444",
@@ -62,7 +62,7 @@ export const OPERATOR_SEED: Operator[] = [
   },
   {
     actor_id:       "actor_barber_003",
-    username:       "barber3@unclegrooming.com",
+    email:       "barber3@unclegrooming.com",
     name:           "Barber 3",
     role:           "BARBER",
     pin:            "555555",

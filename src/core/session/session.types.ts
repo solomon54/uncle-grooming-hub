@@ -7,9 +7,9 @@
  * Specification: TAS v1.0 §9 — Security Architecture (RBAC)
  *                ECS v1.3 EVENT 13 — OPERATOR_SESSION_OPENED
  *                AGENT.md §13–14 — Updated RBAC and Session Contract
- *                SOS v1.0 §2 — Two-factor: username + PIN
+ *                SOS v1.0 §2 — Two-factor: email + PIN
  *
- * Login flow: username (unique identifier) + 6-digit PIN (secret).
+ * Login flow: email (unique identifier) + 6-digit PIN (secret).
  * Username uniqueness prevents PIN collision between operators.
  */
 
@@ -25,15 +25,15 @@ export type OperatorRole = Extract<ActorRole, "BARBER" | "CASHIER" | "ADMIN" | "
 export interface Operator {
   /** Stable UUID — used as actor_id in all events */
   actor_id:       string;
-  /** Unique username — typed at login to identify the operator */
-  username:       string;
+  /** Unique email — typed at login to identify the operator */
+  email:       string;
   /** Display name shown in UI (TopBar, dashboards) */
   name:           string;
   /** Role determines which screens are accessible */
   role:           OperatorRole;
   /**
    * 6-digit PIN — secret credential.
-   * Combined with username to uniquely authenticate.
+   * Combined with email to uniquely authenticate.
    * @todo Phase 2 — Replace with HMAC-SHA256 hash (SOS v1.0 §6 EVENT 28)
    */
   pin:            string;
@@ -55,7 +55,7 @@ export interface ActiveSession {
   /** Display name */
   actor_name:      string;
   /** Username — for display and audit */
-  username:        string;
+  email:        string;
   /** Hardware-bound terminal identifier */
   terminal_id:     string;
   /** HLC timestamp of session open */
