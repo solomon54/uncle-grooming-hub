@@ -285,22 +285,32 @@ function QueueRow({ entry, isSelected, onSelect, barberOptions }: {
 
 // ─── Action Panel ─────────────────────────────────────────────────────────────
 
-function ActionPanel({ entry, barberOptions, sessionId, onClose }: {
+function ActionPanel({ entry: initialEntry, barberOptions, sessionId, onClose }: {
   entry:         QueueEntryView;
   barberOptions: BarberOption[];
   sessionId:     string;
   onClose:       () => void;
 }) {
-  const [selectedBarberId, setSelectedBarberId] = useState(entry.preferred_barber_id ?? "");
+  // Read LIVE entry from projection — not the stale prop snapshot
+  const { view: queue } = useQueueBoard();
+  const entry = [
+    ...(queue?.entries ?? []),
+    ...(queue?.called ?? []),
+    ...(queue?.reservations ?? []),
+    ...(queue?.in_service ?? []),
+  ].find(e => e.queue_entry_id === initialEntry.queue_entry_id) ?? initialEntry;
+
+  const [selectedBarberId, setSelectedBarberId] = useState(initialEntry.preferred_barber_id ?? "");
   const [transferConsent,  setTransferConsent]  = useState(false);
   const [confirm,          setConfirm]          = useState<"noshow" | "cancel" | null>(null);
   const [loading,          setLoading]          = useState<string | null>(null);
 
   // ── Derived state ───────────────────────────────────────────────────────────
   const selectedBarber = barberOptions.find(b => b.id === selectedBarberId);
-  // Block call only if barber is explicitly busy (IN_SERVICE or CALLED)
+  // Barbers who are IN_SERVICE or CALLED cannot take new customers
   const barberBusy = selectedBarber?.status === "IN_SERVICE" || selectedBarber?.status === "CALLED";
-  const canCall    = selectedBarberId !== "" && !barberBusy;
+  // Can only CALL if barber is AVAILABLE (not just assigned)
+  const canCall    = selectedBarberId !== "" && selectedBarber?.status === "AVAILABLE";
   const isTransfer = !!entry.preferred_barber_id && selectedBarberId !== "" && selectedBarberId !== entry.preferred_barber_id;
 
   // ── Handlers ────────────────────────────────────────────────────────────────
@@ -430,17 +440,29 @@ function ActionPanel({ entry, barberOptions, sessionId, onClose }: {
         ) : (
           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
             {barberOptions.map(b => {
-              const isSel  = b.id === selectedBarberId;
-              const isPref = b.id === entry.preferred_barber_id;
-              const busy   = b.status === "IN_SERVICE" || b.status === "CALLED";
+              const isSel   = b.id === selectedBarberId;
+              const isPref  = b.id === entry.preferred_barber_id;
+              const busy    = b.status === "IN_SERVICE" || b.status === "CALLED";
+              const canPick = !busy; // can assign if not actively serving someone
               return (
                 <button key={b.id} type="button"
-                  onClick={() => { setSelectedBarberId(b.id); setTransferConsent(false); }}
-                  style={{ display: "flex", alignItems: "center", gap: "6px", padding: "7px 12px", borderRadius: "9999px", background: isSel ? "rgba(226,214,9,0.1)" : "transparent", border: `1.5px solid ${isSel ? "#e2d609" : isPref ? "rgba(226,214,9,0.3)" : "#2d3840"}`, color: isSel ? "#e2d609" : busy ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.7)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+                  onClick={() => { if (canPick) { setSelectedBarberId(b.id); setTransferConsent(false); } }}
+                  disabled={!canPick}
+                  title={busy ? `${b.name} is currently ${b.status.toLowerCase().replace("_", " ")} — cannot assign` : undefined}
+                  style={{ display: "flex", alignItems: "center", gap: "6px", padding: "7px 12px", borderRadius: "9999px",
+                    background: isSel ? "rgba(226,214,9,0.1)" : "transparent",
+                    border: `1.5px solid ${isSel ? "#e2d609" : isPref ? "rgba(226,214,9,0.3)" : busy ? "rgba(255,255,255,0.06)" : "#2d3840"}`,
+                    color: busy ? "rgba(255,255,255,0.2)" : isSel ? "#e2d609" : "rgba(255,255,255,0.7)",
+                    fontSize: "12px", fontWeight: 600,
+                    cursor: canPick ? "pointer" : "not-allowed",
+                    opacity: busy ? 0.5 : 1,
+                  }}>
                   <StatusDot status={b.status} />
                   {b.name}
-                  {isPref && <span style={{ fontSize: "9px", color: "#e2d609", opacity: 0.7 }}>★</span>}
-                  {busy && <span style={{ fontSize: "10px", opacity: 0.5 }}>({b.status.toLowerCase().replace("_", " ")})</span>}
+                  {isPref && !busy && <span style={{ fontSize: "9px", color: "#e2d609", opacity: 0.7 }}>★</span>}
+                  {busy && <span style={{ fontSize: "10px" }}>({b.status.toLowerCase().replace("_", " ")})</span>}
+                  {b.status === "OFFLINE" && !busy && <span style={{ fontSize: "10px", opacity: 0.5 }}>(offline)</span>}
+                  {b.status === "ON_BREAK" && <span style={{ fontSize: "10px", opacity: 0.5 }}>(break)</span>}
                 </button>
               );
             })}
