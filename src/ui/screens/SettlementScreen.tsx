@@ -134,7 +134,7 @@ function PaymentPanel({ tx, sessionId, onClose }: PaymentPanelProps) {
         barberTipEtb:     barberTip,
         cashierTipEtb:    cashierTip,
         paymentMethod:    method,
-      }, { session_id: sessionId, actor_id: "", role: "CASHIER", actor_name: "", terminal_id: "", opened_at: "", is_first_login: false });
+      }, { session_id: sessionId, actor_id: "", role: "CASHIER", actor_name: "", email: "", terminal_id: "", opened_at: "", is_first_login: false });
     } finally { setLoading(null); }
   };
 
@@ -145,7 +145,7 @@ function PaymentPanel({ tx, sessionId, onClose }: PaymentPanelProps) {
       await requestSettlement({
         transactionId: tx.transaction_id,
         totalEtb:      total,
-      }, { session_id: sessionId, actor_id: "", role: "CASHIER", actor_name: "", terminal_id: "", opened_at: "", is_first_login: false });
+      }, { session_id: sessionId, actor_id: "", role: "CASHIER", actor_name: "", email: "", terminal_id: "", opened_at: "", is_first_login: false });
       setSettled(true);
       setTimeout(onClose, 1500);
     } finally { setLoading(null); }

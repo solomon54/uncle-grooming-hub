@@ -496,9 +496,9 @@ export default function BarberDashboardScreen({ laneId }: { laneId: string }) {
             <motion.div key="lane-tab" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
               <AnimatePresence mode="wait">
                 {laneStatus === "IN_SERVICE" && inServiceCustomer ? (
-                  <InServiceState key="in-service" customer={inServiceCustomer} sessionId={session.session_id} onComplete={handleCompleteService} />
+                  <InServiceState key="in-service" customer={inServiceCustomer} sessionId={session.session_id} onComplete={handleCompleteService} onEmergencyCancel={handleEmergencyCancel} loading={loading} />
                 ) : laneStatus === "CALLED" && calledCustomer ? (
-                  <CalledState key="called" lane={lane} customer={calledCustomer} sessionId={session.session_id} onStart={handleStartService} onNoShow={() => {}} />
+                  <CalledState key="called" lane={lane} customer={calledCustomer} sessionId={session.session_id} onStart={handleStartService} onNoShow={handleNoShow} loading={loading} />
                 ) : (
                   <AvailableState key="available" lane={lane} nextUp={nextUp} onSetAvailable={handleSetAvailable} onBreak={handleGoOnBreak} loading={loading} />
                 )}

@@ -89,9 +89,9 @@ export function TopBar({ session, onLogout }: TopBarProps) {
 
         {/* Actor name + avatar */}
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          {(session as Record<string, unknown>).avatar_url ? (
+          {(session as unknown as Record<string, unknown>).avatar_url ? (
             <img
-              src={(session as Record<string, unknown>).avatar_url as string}
+              src={(session as unknown as Record<string, unknown>).avatar_url as string}
               alt={session.actor_name}
               width={24} height={24}
               style={{ width: 24, height: 24, borderRadius: "50%", objectFit: "cover", border: "1px solid #3a4650" }}

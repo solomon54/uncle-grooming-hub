@@ -986,6 +986,7 @@ function StaffSection({ session }: { session: NonNullable<ReturnType<typeof useS
                   onDeactivate={handleDeactivate}
                   onReactivate={handleReactivate}
                   onResetPin={setResetTarget}
+                  onDelete={() => {}}
                 />
               ))}
             </div>

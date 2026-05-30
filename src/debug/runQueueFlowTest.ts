@@ -16,14 +16,14 @@ import {
   startService,
   completeService,
 } from "@/core/actions/queue.actions";
-import type { QueueBoardState } from "@/core/projection/queue-board.projection";
-import type { RxDatabase }      from "rxdb";
+import type { QueueBoardView } from "@/projections/queue-board.view";
+import type { RxDatabase }     from "rxdb";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const TEST_SESSION_ID = "debug-session-001";
 
-function logState(label: string, state: QueueBoardState | undefined) {
+function logState(label: string, state: QueueBoardView | undefined) {
   console.log(`\n===== ${label} =====`);
   console.log(JSON.stringify(state, null, 2));
 }

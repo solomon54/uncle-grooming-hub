@@ -276,7 +276,7 @@ export default function SettingsScreen() {
           <Section title="Profile">
             <PhotoUpload
               actorId={session.actor_id}
-              currentUrl={avatarUrl ?? (session as Record<string, unknown>).avatar_url as string | null ?? null}
+              currentUrl={avatarUrl ?? (session as unknown as Record<string, unknown>).avatar_url as string | null ?? null}
               name={session.actor_name}
               onUploaded={handleAvatarUploaded}
             />

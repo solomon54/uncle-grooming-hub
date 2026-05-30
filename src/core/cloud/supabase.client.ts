@@ -24,9 +24,11 @@ export const DB_SCHEMA = process.env.SUPABASE_SCHEMA ?? "uncle_grooming";
 
 // ─── Browser client (anon key — safe to expose) ───────────────────────────────
 
-let _browserClient: SupabaseClient | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _browserClient: SupabaseClient<any, any, any> | null = null;
 
-export function getSupabaseClient(): SupabaseClient | null {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getSupabaseClient(): SupabaseClient<any, any, any> | null {
   if (typeof window === "undefined") return null;
   if (_browserClient) return _browserClient;
 
@@ -38,10 +40,11 @@ export function getSupabaseClient(): SupabaseClient | null {
     return null;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _browserClient = createClient(url, key, {
     db:   { schema: DB_SCHEMA },
     auth: { persistSession: false },
-  });
+  }) as SupabaseClient<any, any, any>;
 
   return _browserClient;
 }

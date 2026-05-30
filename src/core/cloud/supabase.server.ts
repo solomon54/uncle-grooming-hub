@@ -16,7 +16,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { DB_SCHEMA } from "./supabase.client";
 
-export function getSupabaseServer(): SupabaseClient {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getSupabaseServer(): SupabaseClient<any, any, any> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -26,8 +27,9 @@ export function getSupabaseServer(): SupabaseClient {
 
   // Do NOT cache — Next.js dev hot-reload can cause stale singleton issues.
   // createClient is cheap; a new instance per request is safe.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return createClient(url, key, {
     db:   { schema: DB_SCHEMA },
     auth: { persistSession: false, autoRefreshToken: false },
-  });
+  }) as SupabaseClient<any, any, any>;
 }
