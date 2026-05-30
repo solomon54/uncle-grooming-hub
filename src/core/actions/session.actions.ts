@@ -26,7 +26,8 @@ import type { ActiveSession } from "@/core/session/session.types";
  * SOS v1.0 §4.2: if is_first_login is true, caller must redirect to PIN change screen.
  */
 export async function openSession(pin: string): Promise<ActiveSession | null> {
-  return sessionService.login(pin);
+  // Pass null, an empty configuration object {}, or a device identifier if requested by your session contract
+  return sessionService.login(pin, {}); 
 }
 
 // ─── Close Session ────────────────────────────────────────────────────────────
