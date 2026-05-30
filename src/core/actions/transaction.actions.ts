@@ -5,12 +5,12 @@
  * Transaction Action Creators — Settlement Desk module.
  *
  * Specification: MODULE_PRIORITY.md P3.4
- *                ECS v1.3 — Events 06, 07, 09
- *                CXS v1.1 §5.4 — 3-wallet model (base + barber_tip + cashier_tip)
- *                AGENT.md §4 — Authority Boundaries
+ * ECS v1.3 — Events 06, 07, 09
+ * CXS v1.1 §5.4 — 3-wallet model (base + barber_tip + cashier_tip)
+ * AGENT.md §4 — Authority Boundaries
  *
  * CRITICAL: EVENT 08 (PAYMENT_SETTLED) is NEVER emitted here.
- *           requestSettlement() makes a Cloud API request — Cloud emits EVENT 08.
+ * requestSettlement() makes a Cloud API request — Cloud emits EVENT 08.
  * CRITICAL: EVENT 09 (ADJUSTMENT_EVENT) requires ADMIN or SYSTEM_OWNER role.
  */
 
@@ -51,6 +51,11 @@ export async function initializeBilling(
 ) {
   const totalEtb = params.basePriceEtb + params.barberTipEtb + params.cashierTipEtb;
 
+  // Map the upper-case UI strings to exact lower-case event definitions required by backend
+  const mappedPaymentMethod = (
+    params.paymentMethod === "MPESA" ? "m-pesa" : params.paymentMethod.toLowerCase()
+  ) as "cash" | "telebirr" | "chapa" | "cbe_birr" | "m-pesa";
+
   const event: PaymentIntentCreatedEvent = {
     event_id:          crypto.randomUUID(),
     event_type:        "PAYMENT_INTENT_CREATED",
@@ -59,12 +64,12 @@ export async function initializeBilling(
     payload: {
       base_price:      params.basePriceEtb,
       tip_amount:      params.barberTipEtb,
-      payment_method:  params.paymentMethod,
+      payment_method:  mappedPaymentMethod,
       // Extended fields for 3-wallet model (CXS v1.1 §5.4)
       barber_tip_etb:  params.barberTipEtb,
       cashier_tip_etb: params.cashierTipEtb,
       total_etb:       totalEtb,
-    } as PaymentIntentCreatedEvent["payload"] & Record<string, unknown>,
+    } as unknown as PaymentIntentCreatedEvent["payload"],
     metadata: meta(session),
   };
   return runtime.emit(event);
