@@ -148,6 +148,31 @@ export function RuntimeProvider({ children }: { children: React.ReactNode }) {
       setPhase("ready");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
+
+      // RxDB DB9 = schema conflict with existing IndexedDB.
+      // Clear all RxDB databases and retry once with a fresh store.
+      if (message.includes("DB9") || message.includes("schema")) {
+        console.warn("[RuntimeProvider] Schema conflict detected — clearing local DB and retrying…");
+        try {
+          // Delete all IndexedDB databases that match our naming pattern
+          const dbs = await indexedDB.databases?.() ?? [];
+          for (const db of dbs) {
+            if (db.name?.includes("ugh_local_journal")) {
+              indexedDB.deleteDatabase(db.name);
+            }
+          }
+          // Small delay to let deletion complete
+          await new Promise(r => setTimeout(r, 500));
+          // Reload the page — clean slate
+          window.location.reload();
+          return;
+        } catch {
+          // indexedDB.databases() not available in all browsers — just reload
+          window.location.reload();
+          return;
+        }
+      }
+
       console.error("[RuntimeProvider] Boot failed:", err);
       setError(message);
       setPhase("error");

@@ -53,7 +53,7 @@ export async function getDatabase(): Promise<RxDatabase> {
 
     try {
       const db = await createRxDatabase({
-        name:            "ugh_local_journal",  // stable name — never change this
+        name:            "ugh_local_journal_v2",  // bumped — clears old schema conflicts
         storage,
         ignoreDuplicate: true,
       });
