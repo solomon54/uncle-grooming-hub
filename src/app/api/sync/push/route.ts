@@ -77,7 +77,7 @@ export async function POST(request: Request) {
   try {
     const supabase = getSupabaseServer();
 
-    // Build rows for upsert (idempotent — duplicate event_ids are ignored)
+    // Build rows for upsert
     const rows = validEvents.map(e => ({
       event_id:          e.event_id,
       aggregate_id:      e.aggregate_id,
@@ -92,14 +92,29 @@ export async function POST(request: Request) {
       is_synced:         true,
     }));
 
+    // Try upsert by event_id first (primary idempotency key)
     const { error: insertError } = await supabase
       .schema(DB_SCHEMA)
       .from("events")
       .upsert(rows, { onConflict: "event_id", ignoreDuplicates: true });
 
     if (insertError) {
-      console.error("[sync/push] Supabase insert error:", insertError);
-      // Don't fail the whole batch — return partial ACK
+      // If the error is a duplicate on (aggregate_id, aggregate_version), the event
+      // is a version conflict — a different event already occupies that slot in the cloud.
+      // This happens when the barber dashboard auto-initialises a lane that already exists.
+      // ACK these events anyway so the sync engine stops retrying them — they are
+      // superseded by the cloud version and should be marked synced locally.
+      const isVersionConflict =
+        insertError.code === "23505" &&
+        (insertError.details ?? "").includes("aggregate_version");
+
+      if (isVersionConflict) {
+        // ACK all events — they are either already in cloud or superseded
+        ackEventIds.push(...validEvents.map(e => e.event_id!));
+      } else {
+        console.error("[sync/push] Supabase insert error:", insertError);
+        // Don't fail the whole batch — return partial ACK
+      }
     } else {
       ackEventIds.push(...validEvents.map(e => e.event_id!));
     }

@@ -17,16 +17,19 @@ import { projectionEngine }   from "@/core/projection/projection.engine";
 import type { AllEvents }     from "@/domain/events/event.definitions";
 import type { SyncEngineStatus, SyncPushAck } from "./sync.types";
 
-const PUSH_INTERVAL_MS = 60_000;
+const PUSH_INTERVAL_MS = 30_000;  // push every 30s (was 60s)
+const PULL_INTERVAL_MS = 10_000;  // pull every 10s for cross-terminal updates
 const BASE_BACKOFF_MS  = 2_000;
 const MAX_BACKOFF_MS   = 300_000;
 const BATCH_LIMIT      = 100;
 
 class SyncEngine {
-  private intervalId: ReturnType<typeof setInterval> | null = null;
+  private intervalId:     ReturnType<typeof setInterval> | null = null;
+  private pullIntervalId: ReturnType<typeof setInterval> | null = null;
   private backoffMs  = BASE_BACKOFF_MS;
   private pushing    = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private onFocus:    (() => void) | null = null;
 
   private status: SyncEngineStatus = {
     state:        "verified",
@@ -45,10 +48,21 @@ class SyncEngine {
     void this.push();
     void this.pull();
 
+    // Push interval — flush local events to cloud
     this.intervalId = setInterval(() => {
       void this.push();
-      void this.pull();
     }, PUSH_INTERVAL_MS);
+
+    // Pull interval — fetch cross-terminal events every 10s
+    this.pullIntervalId = setInterval(() => {
+      void this.pull();
+    }, PULL_INTERVAL_MS);
+
+    // Pull on tab focus — instant update when user switches back
+    if (typeof document !== "undefined") {
+      this.onFocus = () => void this.pull();
+      window.addEventListener("focus", this.onFocus);
+    }
   }
 
   stop(): void {
@@ -56,10 +70,23 @@ class SyncEngine {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
+    if (this.pullIntervalId) {
+      clearInterval(this.pullIntervalId);
+      this.pullIntervalId = null;
+    }
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
     }
+    if (this.onFocus && typeof window !== "undefined") {
+      window.removeEventListener("focus", this.onFocus);
+      this.onFocus = null;
+    }
+  }
+
+  /** Triggered by Pusher when another terminal pushes events — pull immediately */
+  triggerPull(): void {
+    void this.pull();
   }
 
   /** Event-driven trigger after local commitEvent (MODULE_PRIORITY P4.3) */

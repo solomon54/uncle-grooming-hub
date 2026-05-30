@@ -18,7 +18,7 @@ export async function GET() {
   const { data, error } = await supabase
     .schema(DB_SCHEMA)
     .from("operators")
-    .select("actor_id, email, name, role, barber_id, is_active, is_first_login, created_at")
+    .select("actor_id, email, name, role, barber_id, is_active, is_first_login, avatar_url, created_at")
     .order("created_at", { ascending: true });
 
   if (error) {
