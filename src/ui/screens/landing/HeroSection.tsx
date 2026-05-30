@@ -56,7 +56,6 @@ export function HeroSection() {
     return () => clearInterval(t);
   }, []);
 
-  // Close menu on scroll
   useEffect(() => {
     const close = () => setMenuOpen(false);
     window.addEventListener("scroll", close, { passive: true });
@@ -68,14 +67,16 @@ export function HeroSection() {
       <style>{`
         /* ── Navbar ── */
         .nav-links { display: flex; align-items: center; gap: 28px; }
+        .nav-actions-wrap { display: flex; align-items: center; gap: 20px; }
         .nav-hamburger { display: none; }
         .nav-mobile-menu { display: none; }
 
         @media (max-width: 767px) {
           .nav-links { display: none !important; }
+          .nav-actions-wrap { display: none !important; }
           .nav-hamburger { display: flex !important; }
           .nav-mobile-menu { display: flex !important; }
-          .nav-reserve-desktop { display: none !important; }
+          .brand-text { font-size: 15px !important; letter-spacing: 0.16em !important; }
         }
 
         /* ── Hero content ── */
@@ -95,7 +96,7 @@ export function HeroSection() {
       {/* ── Navbar ── */}
       <nav style={{
         position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
-        height: "56px",
+        height: "64px",
         background: "rgba(15,19,23,0.92)",
         backdropFilter: "blur(12px)",
         borderBottom: "1px solid rgba(255,255,255,0.07)",
@@ -103,12 +104,27 @@ export function HeroSection() {
         padding: "0 20px",
       }}>
         <div style={{ maxWidth: "1280px", margin: "0 auto", width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          {/* Logo */}
-          <Link href="/" style={{ display: "flex", alignItems: "center", gap: "10px", textDecoration: "none" }}>
-            <div style={{ width: "30px", height: "30px", borderRadius: "8px", background: "#e2d609", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <span style={{ color: "#0f1317", fontWeight: 900, fontSize: "14px" }}>U</span>
-            </div>
-            <span style={{ color: "#ffffff", fontWeight: 700, fontSize: "14px", letterSpacing: "-0.01em" }}>Uncle Grooming</span>
+          
+          {/* Brand — real logo image */}
+          <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: "10px", textDecoration: "none" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/assets/logo.png"
+              alt="Dove Barber"
+              style={{ height: "40px", width: "auto", objectFit: "contain", display: "block" }}
+            />
+            <span
+              className="brand-text"
+              style={{
+                color: "#ffffff",
+                fontWeight: 800,
+                fontSize: "17px",
+                letterSpacing: "0.22em",
+                textTransform: "uppercase",
+              }}
+            >
+              Dove Barber
+            </span>
           </Link>
 
           {/* Desktop links */}
@@ -118,19 +134,38 @@ export function HeroSection() {
             ))}
           </div>
 
-          {/* Desktop CTA */}
-          <Link
-            className="nav-reserve-desktop"
-            href="/reserve"
-            style={{
-              display: "inline-flex", alignItems: "center", gap: "6px",
-              padding: "9px 18px", borderRadius: "9999px",
-              background: "#e2d609", color: "#0f1317",
-              fontSize: "13px", fontWeight: 800, textDecoration: "none",
-            }}
-          >
-            Reserve →
-          </Link>
+          {/* Action Group: Primary CTA and Mysterious Login Button */}
+          <div className="nav-actions-wrap">
+            {/* Mysterious, low-profile admin pathway */}
+            <Link
+              href="/login"
+              style={{
+                fontSize: "12px",
+                fontWeight: 400,
+                color: "rgba(255, 255, 255, 0.22)",
+                textDecoration: "none",
+                letterSpacing: "0.05em",
+                transition: "color 0.25s ease",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255, 255, 255, 0.65)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255, 255, 255, 0.22)")}
+            >
+              Login
+            </Link>
+
+            {/* Clear Primary Accent Action */}
+            <Link
+              style={{
+                display: "inline-flex", alignItems: "center", gap: "6px",
+                padding: "9px 18px", borderRadius: "9999px",
+                background: "#e2d609", color: "#0f1317",
+                fontSize: "13px", fontWeight: 800, textDecoration: "none",
+              }}
+              href="/reserve"
+            >
+              Reserve →
+            </Link>
+          </div>
 
           {/* Hamburger */}
           <button
@@ -141,7 +176,7 @@ export function HeroSection() {
           >
             <span style={{ display: "block", width: "22px", height: "2px", background: menuOpen ? "#e2d609" : "rgba(255,255,255,0.8)", borderRadius: "2px", transition: "all 0.2s", transform: menuOpen ? "rotate(45deg) translate(5px, 5px)" : "none" }} />
             <span style={{ display: "block", width: "22px", height: "2px", background: menuOpen ? "transparent" : "rgba(255,255,255,0.8)", borderRadius: "2px", transition: "all 0.2s" }} />
-            <span style={{ display: "block", width: "22px", height: "2px", background: menuOpen ? "#e2d609" : "rgba(255,255,255,0.8)", borderRadius: "2px", transition: "all 0.2s", transform: menuOpen ? "rotate(-45deg) translate(5px, -5px)" : "none" }} />
+            <span style={{ display: "block", width: "22px", height: "2px", background: menuOpen ? "#f0d678" : "rgba(255,255,255,0.8)", borderRadius: "2px", transition: "all 0.2s", transform: menuOpen ? "rotate(-45deg) translate(5px, -5px)" : "none" }} />
           </button>
         </div>
 
@@ -150,7 +185,7 @@ export function HeroSection() {
           <div
             className="nav-mobile-menu"
             style={{
-              position: "absolute", top: "56px", left: 0, right: 0,
+              position: "absolute", top: "64px", left: 0, right: 0,
               background: "rgba(15,19,23,0.98)",
               borderBottom: "1px solid rgba(255,255,255,0.08)",
               flexDirection: "column",
@@ -183,12 +218,21 @@ export function HeroSection() {
               >
                 Reserve Your Spot →
               </Link>
+              
+              {/* Subtle mobile portal placement */}
+              <Link
+                href="/login"
+                onClick={() => setMenuOpen(false)}
+                style={{ textAlign: "center", padding: "10px 0", color: "rgba(255,255,255,0.15)", fontSize: "11px", fontWeight: 400, textDecoration: "none" }}
+              >
+                System Portal Login
+              </Link>
             </div>
           </div>
         )}
       </nav>
 
-      {/* ── Hero ── */}
+      {/* ── Hero Main Cover ── */}
       <section
         style={{ position: "relative", minHeight: "100svh", display: "flex", flexDirection: "column", justifyContent: "flex-end", overflow: "hidden" }}
         aria-label="Hero"
@@ -213,7 +257,7 @@ export function HeroSection() {
             >
               <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: "#e2d609", display: "inline-block", flexShrink: 0 }} />
               <span className="hero-eyebrow" style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#e2d609" }}>
-                Now Open · Bole, Addis Ababa
+                Now Open · Gerji Mebrat Haile, Addis Ababa
               </span>
             </motion.div>
 
@@ -233,9 +277,9 @@ export function HeroSection() {
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.5, ease: [0.16, 1, 0.3, 1] }}
-              style={{ fontSize: "clamp(14px, 1.6vw, 17px)", color: "rgba(255,255,255,0.6)", lineHeight: 1.7, maxWidth: "480px", marginBottom: "28px" }}
+              style={{ fontSize: "clamp(14px, 1.6vw, 17px)", color: "rgba(255,255,255,0.45)", lineHeight: 1.7, maxWidth: "480px", marginBottom: "28px" }}
             >
-              {"Addis Ababa's premium grooming experience. Reserve your chair, arrive exactly when it's your turn."}
+              {"Welcome to your premium grooming experience. Reserve your chair, track your place in line, and arrive exactly when it's your turn."}
             </motion.p>
 
             <motion.div

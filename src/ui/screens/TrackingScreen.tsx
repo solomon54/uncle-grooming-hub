@@ -171,7 +171,7 @@ export default function TrackingScreen({ token }: TrackingScreenProps) {
           : "ተራዎ ደርሷል! ወንበሩ ጋር ይምጡ። 🪒");
         // Web Push notification (if permission granted)
         if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-          new Notification("Uncle Grooming Hub", {
+          new Notification("Dove Barber", {
             body: "It's your turn! Your barber is ready.",
             icon: "/favicon.ico",
           });
@@ -260,7 +260,7 @@ export default function TrackingScreen({ token }: TrackingScreenProps) {
             <span style={{ color: "#0f1317", fontSize: "12px", fontWeight: 900 }}>U</span>
           </div>
           <span style={{ fontSize: "14px", fontWeight: 700, color: "#f5f5f5" }}>
-            Uncle Grooming Hub
+            Dove Barber
           </span>
         </div>
         <button
@@ -479,7 +479,7 @@ export default function TrackingScreen({ token }: TrackingScreenProps) {
               onClick={() => {
                 Notification.requestPermission().then(perm => {
                   if (perm === "granted") {
-                    new Notification("Uncle Grooming Hub", {
+                    new Notification("Dove Barber", {
                       body: "You'll be notified when it's your turn.",
                       icon: "/favicon.ico",
                     });
@@ -559,7 +559,7 @@ export default function TrackingScreen({ token }: TrackingScreenProps) {
           {process.env.NEXT_PUBLIC_PUSHER_KEY
             ? (locale === "en" ? "🟢 Live updates" : "🟢 ቀጥታ ዝማኔ")
             : (locale === "en" ? "Updates every 30 seconds" : "በ30 ሰከንድ ይዘምናል")
-          } · Uncle Grooming Hub
+          } · Dove Barber
         </p>
       </footer>
     </div>

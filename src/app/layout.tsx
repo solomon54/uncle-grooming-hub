@@ -16,9 +16,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title:       "Uncle Grooming Hub — Premium Grooming, Addis Ababa",
+  title:       "Dove Barber — Premium Grooming, Addis Ababa",
   description: "Reserve your spot at Addis Ababa's premier grooming experience. Walk in or book ahead — your barber is ready.",
-  keywords:    ["barbershop", "grooming", "Addis Ababa", "Ethiopia", "haircut", "beard"],
+  keywords:    ["barbershop", "grooming", "Addis Ababa", "Ethiopia", "haircut", "beard", "Dove Barber"],
 };
 
 export default function RootLayout({

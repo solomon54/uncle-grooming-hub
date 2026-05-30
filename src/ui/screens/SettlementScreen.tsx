@@ -350,14 +350,12 @@ export default function SettlementScreen() {
     <div style={{ minHeight: "100dvh", background: "#0f1317", display: "flex", flexDirection: "column" }}>
       <TopBar session={session} />
 
-      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
 
-        {/* ── Left: Transaction List ────────────────────────────────────────── */}
+        {/* ── Transaction List ──────────────────────────────────────────────── */}
         <div style={{
-          width: selected ? "45%" : "100%",
-          borderRight: selected ? "1px solid #2d3840" : "none",
+          width: "100%",
           display: "flex", flexDirection: "column", overflow: "hidden",
-          transition: "width 0.3s ease",
         }}>
           {/* Header */}
           <div style={{ padding: "16px 20px", borderBottom: "1px solid #2d3840", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -399,27 +397,29 @@ export default function SettlementScreen() {
                   </span>
                 </div>
                 {settled.map(tx => (
-                  <TxRow
-                    key={tx.transaction_id}
-                    tx={tx}
-                    isSelected={false}
-                    onSelect={() => {}}
-                  />
+                  <TxRow key={tx.transaction_id} tx={tx} isSelected={false} onSelect={() => {}} />
                 ))}
               </div>
             )}
           </div>
         </div>
 
-        {/* ── Right: Payment Panel ──────────────────────────────────────────── */}
+        {/* ── Payment Panel — full-screen overlay on mobile, side panel on desktop ── */}
         <AnimatePresence>
           {selected && (
             <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
               transition={{ duration: 0.25, ease: "easeOut" }}
-              style={{ flex: 1, overflowY: "auto", padding: "24px" }}
+              style={{
+                position: "absolute", inset: 0,
+                background: "#0f1317",
+                overflowY: "auto",
+                padding: "20px 16px",
+                zIndex: 10,
+              }}
+              className="settlement-panel"
             >
               <PaymentPanel
                 tx={selected}
@@ -430,6 +430,20 @@ export default function SettlementScreen() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Desktop: side-by-side layout */}
+      <style>{`
+        @media (min-width: 768px) {
+          .settlement-panel {
+            position: relative !important;
+            inset: auto !important;
+            flex: 1 !important;
+            border-left: 1px solid #2d3840 !important;
+            padding: 24px !important;
+          }
+          .settlement-panel + * { display: none; }
+        }
+      `}</style>
     </div>
   );
 }

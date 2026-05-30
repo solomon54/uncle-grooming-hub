@@ -6,6 +6,7 @@
  */
 
 import React from "react";
+import { BrandLogo } from "@/ui/components/primitives/BrandLogo";
 
 function SocialIcon({ label, href, children }: { label: string; href: string; children: React.ReactNode }) {
   return (
@@ -38,18 +39,11 @@ export function PublicFooter() {
       }}>
 
         {/* Logo */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <div style={{ width: "28px", height: "28px", borderRadius: "6px", background: "#e2d609", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <span style={{ color: "#0f1317", fontSize: "12px", fontWeight: 900 }}>U</span>
-          </div>
-          <span style={{ fontSize: "14px", fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>
-            Uncle<span style={{ color: "#e2d609" }}>.</span>
-          </span>
-        </div>
+        <BrandLogo href="/" size={28} showName nameColor="rgba(255,255,255,0.7)" nameFontSize={13} />
 
         {/* Copyright */}
         <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.25)" }}>
-          © {year} Uncle Grooming Hub. All rights reserved.
+          © {year} Dove Barber. All rights reserved.
         </p>
 
         {/* Social */}

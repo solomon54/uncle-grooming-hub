@@ -930,7 +930,7 @@ function StaffSection({ session }: { session: NonNullable<ReturnType<typeof useS
       ) : (
         <>
           {/* Stats */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(80px, 1fr))", gap: "8px" }}>
             {[
               { label: "Active",    value: counts.active,   color: "#10b981" },
               { label: "Barbers",   value: counts.barbers,  color: "#2dd4bf" },
@@ -1024,7 +1024,7 @@ export default function AdminScreen() {
 
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
 
-        {/* ── Sidebar ───────────────────────────────────────────────────────── */}
+        {/* ── Sidebar — desktop only ─────────────────────────────────────── */}
         <nav
           style={{
             width: "200px", flexShrink: 0,
@@ -1033,6 +1033,7 @@ export default function AdminScreen() {
             padding: "16px 10px", gap: "4px",
           }}
           aria-label="Admin navigation"
+          className="admin-sidebar"
         >
           {SECTIONS.map(s => (
             <button
@@ -1062,7 +1063,7 @@ export default function AdminScreen() {
         </nav>
 
         {/* ── Content ───────────────────────────────────────────────────────── */}
-        <main style={{ flex: 1, overflowY: "auto", padding: "24px" }}>
+        <main style={{ flex: 1, overflowY: "auto", padding: "clamp(16px,3vw,24px)" }}>
           <div style={{ maxWidth: "720px" }}>
             {section === "audit"      && <AuditSection />}
             {section === "adjustment" && <AdjustmentSection session={session} />}
@@ -1071,6 +1072,48 @@ export default function AdminScreen() {
           </div>
         </main>
       </div>
+
+      {/* ── Mobile bottom tab bar ─────────────────────────────────────────── */}
+      <nav
+        className="admin-bottom-tabs"
+        style={{
+          display: "none",
+          position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 50,
+          background: "#171d22", borderTop: "1px solid #2d3840",
+          padding: "0 0 env(safe-area-inset-bottom, 0)",
+        }}
+        aria-label="Admin navigation"
+      >
+        {SECTIONS.map(s => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => setSection(s.id)}
+            style={{
+              flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+              gap: "3px", padding: "10px 4px 8px",
+              background: "transparent", border: "none",
+              color: section === s.id ? "#e2d609" : "rgba(255,255,255,0.4)",
+              fontSize: "9px", fontWeight: section === s.id ? 700 : 500,
+              cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em",
+              borderTop: `2px solid ${section === s.id ? "#e2d609" : "transparent"}`,
+              transition: "all 0.15s",
+            }}
+          >
+            <span style={{ fontSize: "18px", lineHeight: 1 }}>{s.icon}</span>
+            <span>{s.label}</span>
+          </button>
+        ))}
+      </nav>
+
+      <style>{`
+        @media (max-width: 640px) {
+          .admin-sidebar { display: none !important; }
+          .admin-bottom-tabs { display: flex !important; }
+          /* Add bottom padding so content isn't hidden behind tab bar */
+          main { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0)) !important; }
+        }
+      `}</style>
     </div>
   );
 }

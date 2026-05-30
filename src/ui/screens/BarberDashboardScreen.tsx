@@ -121,14 +121,17 @@ function AvailableState({ lane, nextUp, onSetAvailable, onBreak, loading }: {
 
 // ─── CALLED State ─────────────────────────────────────────────────────────────
 
-function CalledState({ lane, customer, onStart, onNoShow }: {
-  lane:     BarberLaneView;
-  customer: QueueEntryView;
+function CalledState({ lane, customer, onStart, onNoShow, loading }: {
+  lane:      BarberLaneView;
+  customer:  QueueEntryView;
   sessionId: string;
-  onStart:  () => void;
-  onNoShow: () => void;
+  onStart:   () => void;
+  onNoShow:  () => void;
+  loading:   string | null;
 }) {
   const [elapsed, setElapsed] = useState(() => elapsedMinutes(customer.checkin_hlc));
+  const [confirmNoShow, setConfirmNoShow] = useState(false);
+
   useEffect(() => {
     const id = setInterval(() => setElapsed(elapsedMinutes(customer.checkin_hlc)), 30_000);
     return () => clearInterval(id);
@@ -137,13 +140,17 @@ function CalledState({ lane, customer, onStart, onNoShow }: {
   return (
     <motion.div key="called" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-      style={{ display: "flex", flexDirection: "column", gap: "24px", padding: "32px 24px" }}>
+      style={{ display: "flex", flexDirection: "column", gap: "20px", padding: "28px 24px" }}>
+
       <div style={{ textAlign: "center" }}>
         <Badge variant="called" label="CALLED TO CHAIR" />
-        <div style={{ marginTop: "16px", fontSize: "12px", color: "rgba(255,255,255,0.4)" }}>Called {elapsed} min ago</div>
+        <div style={{ marginTop: "12px", fontSize: "12px", color: "rgba(255,255,255,0.4)" }}>
+          Waiting {elapsed} min
+        </div>
       </div>
-      <div style={{ padding: "24px", borderRadius: "14px", background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "16px" }}>
+
+      <div style={{ padding: "20px", borderRadius: "14px", background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: customer.intents.length > 0 ? "14px" : 0 }}>
           <span style={{ fontSize: "28px", fontWeight: 900, color: "#f59e0b" }}>{customer.queue_token}</span>
           <div>
             <div style={{ fontSize: "20px", fontWeight: 800, color: "#f5f5f5" }}>{customer.customer_display}</div>
@@ -151,70 +158,129 @@ function CalledState({ lane, customer, onStart, onNoShow }: {
           </div>
         </div>
         {customer.intents.length > 0 && (
-          <div>
-            <div style={{ fontSize: "10px", fontWeight: 700, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: "8px" }}>Services</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-              {customer.intents.map(id => (
-                <span key={id} style={{ padding: "4px 12px", borderRadius: "9999px", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", fontSize: "12px", color: "#f59e0b", fontWeight: 600 }}>{id}</span>
-              ))}
-            </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+            {customer.intents.map(id => (
+              <span key={id} style={{ padding: "4px 12px", borderRadius: "9999px", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", fontSize: "12px", color: "#f59e0b", fontWeight: 600 }}>{id}</span>
+            ))}
           </div>
         )}
       </div>
-      <button type="button" onClick={onStart}
-        style={{ width: "100%", padding: "16px 28px", borderRadius: "9999px", background: "#e2d609", color: "#0f1317", fontSize: "16px", fontWeight: 900, border: "none", cursor: "pointer", boxShadow: "0 0 32px rgba(226,214,9,0.3)", transition: "all 0.2s ease" }}>
-        Start Service →
+
+      <button type="button" onClick={onStart} disabled={loading === "start"}
+        style={{ width: "100%", padding: "16px 28px", borderRadius: "9999px", background: loading === "start" ? "rgba(226,214,9,0.4)" : "#e2d609", color: "#0f1317", fontSize: "16px", fontWeight: 900, border: "none", cursor: loading === "start" ? "not-allowed" : "pointer", boxShadow: "0 0 32px rgba(226,214,9,0.3)", transition: "all 0.2s ease" }}>
+        {loading === "start" ? "Starting…" : "Start Service →"}
       </button>
-      <button type="button" onClick={onNoShow}
-        style={{ width: "100%", padding: "12px 28px", borderRadius: "9999px", background: "transparent", color: "rgba(239,68,68,0.7)", fontSize: "14px", fontWeight: 600, border: "1px solid rgba(239,68,68,0.25)", cursor: "pointer", transition: "all 0.2s ease" }}>
-        Customer Didn't Show
-      </button>
+
+      {/* No-show with confirmation */}
+      {!confirmNoShow ? (
+        <button type="button" onClick={() => setConfirmNoShow(true)}
+          style={{ width: "100%", padding: "12px 28px", borderRadius: "9999px", background: "transparent", color: "rgba(239,68,68,0.7)", fontSize: "14px", fontWeight: 600, border: "1px solid rgba(239,68,68,0.25)", cursor: "pointer", transition: "all 0.2s ease" }}>
+          Customer Didn't Show
+        </button>
+      ) : (
+        <div style={{ padding: "14px 16px", borderRadius: "12px", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.3)" }}>
+          <p style={{ fontSize: "13px", fontWeight: 700, color: "#f87171", marginBottom: "6px" }}>⚠️ Mark as No-Show?</p>
+          <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", marginBottom: "12px", lineHeight: 1.5 }}>
+            Customer was called but didn't appear. This cannot be undone.
+          </p>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button type="button" onClick={() => setConfirmNoShow(false)}
+              style={{ flex: 1, padding: "10px", borderRadius: "9999px", background: "transparent", border: "1px solid #2d3840", color: "rgba(255,255,255,0.5)", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+              Cancel
+            </button>
+            <button type="button" onClick={onNoShow} disabled={loading === "noshow"}
+              style={{ flex: 1, padding: "10px", borderRadius: "9999px", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", color: "#f87171", fontSize: "13px", fontWeight: 700, cursor: loading === "noshow" ? "not-allowed" : "pointer" }}>
+              {loading === "noshow" ? "…" : "Yes, No-Show"}
+            </button>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }
 
 // ─── IN_SERVICE State ─────────────────────────────────────────────────────────
 
-function InServiceState({ customer, onComplete }: {
-  customer:   QueueEntryView;
-  sessionId:  string;
-  onComplete: () => void;
+function InServiceState({ customer, onComplete, onEmergencyCancel, loading }: {
+  customer:        QueueEntryView;
+  sessionId:       string;
+  onComplete:      () => void;
+  onEmergencyCancel: () => void;
+  loading:         string | null;
 }) {
-  const [elapsed, setElapsed] = useState(() => elapsedMinutes(customer.checkin_hlc));
+  const [elapsed, setElapsed] = useState(0);
+  const [showEmergency, setShowEmergency] = useState(false);
+
+  // Timer starts from NOW (service start), not check-in time
   useEffect(() => {
-    const id = setInterval(() => setElapsed(elapsedMinutes(customer.checkin_hlc)), 30_000);
+    setElapsed(0);
+    const id = setInterval(() => setElapsed(e => e + 1), 60_000);
     return () => clearInterval(id);
-  }, [customer.checkin_hlc]);
+  }, [customer.queue_entry_id]);
 
   return (
     <motion.div key="in-service" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-      style={{ display: "flex", flexDirection: "column", gap: "24px", padding: "32px 24px" }}>
+      style={{ display: "flex", flexDirection: "column", gap: "20px", padding: "28px 24px" }}>
+
+      {/* Header */}
       <div style={{ textAlign: "center" }}>
         <Badge variant="in-service" label="IN SERVICE" />
-        <div style={{ marginTop: "16px", fontSize: "13px", color: "rgba(255,255,255,0.4)" }}>Service started {elapsed} min ago</div>
+        <div style={{ marginTop: "12px", fontSize: "13px", color: "rgba(255,255,255,0.4)" }}>
+          {elapsed === 0 ? "Service just started" : `${elapsed} min into service`}
+        </div>
       </div>
-      <div style={{ padding: "24px", borderRadius: "14px", background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "16px" }}>
+
+      {/* Customer card */}
+      <div style={{ padding: "20px", borderRadius: "14px", background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: customer.intents.length > 0 ? "16px" : 0 }}>
           <span style={{ fontSize: "28px", fontWeight: 900, color: "#10b981" }}>{customer.queue_token}</span>
-          <div style={{ fontSize: "20px", fontWeight: 800, color: "#f5f5f5" }}>{customer.customer_display}</div>
+          <div>
+            <div style={{ fontSize: "20px", fontWeight: 800, color: "#f5f5f5" }}>{customer.customer_display}</div>
+            <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)", marginTop: "2px" }}>
+              {customer.intents.length} service{customer.intents.length !== 1 ? "s" : ""}
+            </div>
+          </div>
         </div>
         {customer.intents.length > 0 && (
-          <div>
-            <div style={{ fontSize: "10px", fontWeight: 700, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: "8px" }}>Services (locked)</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-              {customer.intents.map(id => (
-                <span key={id} style={{ padding: "4px 12px", borderRadius: "9999px", background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", fontSize: "12px", color: "#10b981", fontWeight: 600 }}>{id}</span>
-              ))}
-            </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+            {customer.intents.map(id => (
+              <span key={id} style={{ padding: "4px 12px", borderRadius: "9999px", background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", fontSize: "12px", color: "#10b981", fontWeight: 600 }}>{id}</span>
+            ))}
           </div>
         )}
       </div>
-      <button type="button" onClick={onComplete}
-        style={{ width: "100%", padding: "16px 28px", borderRadius: "9999px", background: "#e2d609", color: "#0f1317", fontSize: "16px", fontWeight: 900, border: "none", cursor: "pointer", boxShadow: "0 0 32px rgba(226,214,9,0.3)", transition: "all 0.2s ease" }}>
-        Complete Service ✓
+
+      {/* Complete — primary action */}
+      <button type="button" onClick={onComplete} disabled={loading === "complete"}
+        style={{ width: "100%", padding: "16px 28px", borderRadius: "9999px", background: loading === "complete" ? "rgba(226,214,9,0.4)" : "#e2d609", color: "#0f1317", fontSize: "16px", fontWeight: 900, border: "none", cursor: loading === "complete" ? "not-allowed" : "pointer", boxShadow: "0 0 32px rgba(226,214,9,0.3)", transition: "all 0.2s ease" }}>
+        {loading === "complete" ? "Completing…" : "Complete Service ✓"}
       </button>
-      <p style={{ textAlign: "center", fontSize: "12px", color: "rgba(255,255,255,0.25)" }}>Service in progress — no other actions available</p>
+
+      {/* Emergency section */}
+      {!showEmergency ? (
+        <button type="button" onClick={() => setShowEmergency(true)}
+          style={{ background: "none", border: "none", color: "rgba(239,68,68,0.5)", cursor: "pointer", fontSize: "12px", textAlign: "center", padding: "4px", textDecoration: "underline" }}>
+          Emergency — need to stop service
+        </button>
+      ) : (
+        <div style={{ padding: "16px", borderRadius: "12px", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.3)" }}>
+          <p style={{ fontSize: "13px", fontWeight: 700, color: "#f87171", marginBottom: "6px" }}>⚠️ Emergency Stop</p>
+          <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", marginBottom: "14px", lineHeight: 1.5 }}>
+            This will mark the service as complete and remove the customer from the active queue. Use only if something went wrong. The cashier will need to handle payment manually.
+          </p>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button type="button" onClick={() => setShowEmergency(false)}
+              style={{ flex: 1, padding: "10px", borderRadius: "9999px", background: "transparent", border: "1px solid #2d3840", color: "rgba(255,255,255,0.5)", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+              Cancel
+            </button>
+            <button type="button" onClick={onEmergencyCancel} disabled={loading === "emergency"}
+              style={{ flex: 1, padding: "10px", borderRadius: "9999px", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", color: "#f87171", fontSize: "13px", fontWeight: 700, cursor: loading === "emergency" ? "not-allowed" : "pointer" }}>
+              {loading === "emergency" ? "Stopping…" : "Stop Service"}
+            </button>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -232,7 +298,7 @@ function ScheduleTab({ rules, barberId, session }: {
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
   const [localRules, setLocalRules] = useState<ScheduleRule[]>(() =>
-    DAYS.map((_, i) => rules.find(r => r.day_of_week === i) ?? { day_of_week: i, start_time: "09:00", end_time: "18:00", is_active: i >= 1 && i <= 6 })
+    DAYS.map((_, i) => rules.find(r => r.day_of_week === i) ?? { day_of_week: i, start_time: "09:00", end_time: "00:00", is_active: i >= 1 && i <= 6 })
   );
 
   const toggle = (idx: number) =>
@@ -322,11 +388,22 @@ export default function BarberDashboardScreen({ laneId }: { laneId: string }) {
     status: "OFFLINE" as const, schedule_rules: [],
   };
 
+  // Find customers for this lane — check both preferred_barber_id AND any-barber entries
+  // that were called to this specific lane (via the called/in_service lists)
   const nextUp = queue?.entries.find(
     e => (e.preferred_barber_id === laneId || e.preferred_barber_id === null) && e.status === "WAITING"
   );
-  const calledCustomer    = queue?.called.find(e => e.preferred_barber_id === laneId);
-  const inServiceCustomer = queue?.in_service.find(e => e.preferred_barber_id === laneId);
+
+  // For called/in-service: match by preferred_barber_id OR fall back to first entry
+  // (cashier assigns barber at call time, so preferred_barber_id is set then)
+  const calledCustomer = queue?.called.find(
+    e => e.preferred_barber_id === laneId
+  ) ?? (lane.status === "CALLED" ? queue?.called[0] : undefined);
+
+  const inServiceCustomer = queue?.in_service.find(
+    e => e.preferred_barber_id === laneId
+  ) ?? (lane.status === "IN_SERVICE" ? queue?.in_service[0] : undefined);
+
   const todayTips = transactions?.settled_today
     .filter(t => t.barber_id === laneId)
     .reduce((sum, t) => sum + t.barber_tip_etb, 0) ?? 0;
@@ -348,6 +425,30 @@ export default function BarberDashboardScreen({ laneId }: { laneId: string }) {
       const { journalService } = await import("@/core/journal/journal.service");
       const v = await journalService.getNextAggregateVersion(inServiceCustomer.queue_entry_id);
       await completeService({ queueEntryId: inServiceCustomer.queue_entry_id, aggregateVersion: v }, session);
+    } finally { setLoading(null); }
+  };
+
+  // Emergency stop — completes service immediately (barber-initiated abort)
+  const handleEmergencyCancel = async () => {
+    if (!inServiceCustomer || loading) return;
+    setLoading("emergency");
+    try {
+      const { journalService } = await import("@/core/journal/journal.service");
+      const v = await journalService.getNextAggregateVersion(inServiceCustomer.queue_entry_id);
+      // Complete service — cashier handles payment/adjustment separately
+      await completeService({ queueEntryId: inServiceCustomer.queue_entry_id, aggregateVersion: v }, session);
+    } finally { setLoading(null); }
+  };
+
+  // No-show — cancel the called customer
+  const handleNoShow = async () => {
+    if (!calledCustomer || loading) return;
+    setLoading("noshow");
+    try {
+      const { journalService } = await import("@/core/journal/journal.service");
+      const { cancelReservation } = await import("@/core/actions/queue.actions");
+      const v = await journalService.getNextAggregateVersion(calledCustomer.queue_entry_id);
+      await cancelReservation({ aggregateId: calledCustomer.queue_entry_id, aggregateVersion: v, sessionId: session.session_id, reasonCode: "NO_SHOW" });
     } finally { setLoading(null); }
   };
 

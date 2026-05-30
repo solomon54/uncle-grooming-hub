@@ -2,7 +2,7 @@
  * @file LandingPage.tsx
  * @module ui/screens
  *
- * Public landing page — Uncle Grooming Hub.
+ * Public landing page — Dove Barber.
  * Composed from focused section components.
  * Mobile-first, fully responsive, scroll-animated.
  */

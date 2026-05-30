@@ -20,6 +20,7 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { runtime }     from "@/core/runtime/runtime";
+import { syncEngine }  from "@/core/sync/sync.engine";
 import { getDatabase } from "@/core/db/database";
 
 // ─── Boot States ──────────────────────────────────────────────────────────────
@@ -52,7 +53,7 @@ function BootScreen({ phase }: { phase: BootPhase }) {
           <span className="text-xl font-bold text-gold-base">U</span>
         </div>
         <span className="text-xs font-semibold uppercase tracking-widest text-text-tertiary">
-          Uncle Grooming Hub
+          Dove Barber
         </span>
       </div>
 
@@ -141,7 +142,7 @@ export function RuntimeProvider({ children }: { children: React.ReactNode }) {
       setPhase("replay");
       await runtime.replayFromStart();
 
-      // Start background sync loop (MODULE_PRIORITY P4.1 step 5)
+      // Start background sync loop
       runtime.startSync();
 
       setPhase("ready");
@@ -156,6 +157,41 @@ export function RuntimeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     boot();
   }, [boot]);
+
+  // ── Pusher real-time subscription ─────────────────────────────────────────
+  // Once booted, subscribe to the shop-wide queue channel.
+  // When any terminal pushes an event, Pusher fires and we immediately pull
+  // the new events — no waiting for the 10s poll interval.
+  useEffect(() => {
+    if (phase !== "ready") return;
+
+    let unsubscribe: (() => void) | null = null;
+
+    const setup = async () => {
+      try {
+        const { getPusherClient } = await import("@/core/realtime/pusher.client");
+        const pusher = getPusherClient();
+        if (!pusher) return; // Pusher not configured — polling fallback active
+
+        const channel = pusher.subscribe("shop-queue");
+
+        // Any queue event from another terminal → pull immediately
+        const handler = () => syncEngine.triggerPull();
+        channel.bind("queue.updated", handler);
+
+        unsubscribe = () => {
+          channel.unbind("queue.updated", handler);
+          pusher.unsubscribe("shop-queue");
+        };
+      } catch (e) {
+        console.warn("[RuntimeProvider] Pusher setup failed:", e);
+      }
+    };
+
+    void setup();
+
+    return () => { unsubscribe?.(); };
+  }, [phase]);
 
   if (phase === "error" && error) {
     return <ErrorScreen message={error} onRetry={boot} />;

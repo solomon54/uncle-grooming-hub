@@ -317,7 +317,7 @@ export default function LoginScreen() {
           letterSpacing: "-0.01em",
           margin: 0,
         }}>
-          Uncle Grooming Hub
+          Dove Barber
         </h1>
         <p style={{
           fontSize: "clamp(11px, 2.5vw, 13px)",

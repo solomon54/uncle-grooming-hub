@@ -11,6 +11,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { BrandLogo } from "@/ui/components/primitives/BrandLogo";
 
 const NAV_LINKS = [
   { label: "Services",     href: "#services"     },
@@ -58,16 +59,8 @@ export function PublicHeader() {
         }}>
 
           {/* Logo */}
-          <Link href="/" style={{ display: "flex", alignItems: "center", gap: "10px", textDecoration: "none" }} aria-label="Uncle Grooming Hub">
-            <div style={{
-              width: "32px", height: "32px", borderRadius: "8px",
-              background: "#e2d609", display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              <span style={{ color: "#0f1317", fontSize: "14px", fontWeight: 900 }}>U</span>
-            </div>
-            <span style={{ color: "#ffffff", fontSize: "17px", fontWeight: 700, letterSpacing: "-0.01em" }}>
-              Uncle<span style={{ color: "#e2d609" }}>.</span>
-            </span>
+          <Link href="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }} aria-label="Dove Barber">
+            <BrandLogo size={36} showName nameColor="#ffffff" nameFontSize={15} />
           </Link>
 
           {/* Desktop nav */}

@@ -14,9 +14,11 @@
 "use client";
 
 import React, { useState } from "react";
+import Link               from "next/link";
 import { useRouter }       from "next/navigation";
 import { sessionService }  from "@/core/session/session.service";
 import { SyncIndicator }   from "@/ui/components/primitives/SyncIndicator";
+import { BrandLogo }       from "@/ui/components/primitives/BrandLogo";
 import type { ActiveSession } from "@/core/session/session.types";
 
 // ─── Role badge colors ────────────────────────────────────────────────────────
@@ -67,14 +69,10 @@ export function TopBar({ session, onLogout }: TopBarProps) {
 
       {/* Left — brand + role */}
       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-        {/* Logo mark */}
-        <div style={{
-          width: "28px", height: "28px", borderRadius: "7px",
-          background: "#e2d609", display: "flex",
-          alignItems: "center", justifyContent: "center", flexShrink: 0,
-        }}>
-          <span style={{ color: "#0f1317", fontSize: "12px", fontWeight: 900 }}>U</span>
-        </div>
+        {/* Logo — links to home */}
+        <Link href="/" aria-label="Dove Barber — home" style={{ display: "flex", alignItems: "center", flexShrink: 0, textDecoration: "none" }}>
+          <BrandLogo size={28} />
+        </Link>
 
         {/* Divider */}
         <div style={{ width: "1px", height: "20px", background: "#2d3840" }} aria-hidden="true" />
@@ -89,15 +87,51 @@ export function TopBar({ session, onLogout }: TopBarProps) {
           {roleStyle.label}
         </span>
 
-        {/* Actor name */}
-        <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.6)", fontWeight: 500 }}>
-          {session.actor_name}
-        </span>
+        {/* Actor name + avatar */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {(session as Record<string, unknown>).avatar_url ? (
+            <img
+              src={(session as Record<string, unknown>).avatar_url as string}
+              alt={session.actor_name}
+              width={24} height={24}
+              style={{ width: 24, height: 24, borderRadius: "50%", objectFit: "cover", border: "1px solid #3a4650" }}
+            />
+          ) : (
+            <div style={{
+              width: 24, height: 24, borderRadius: "50%",
+              background: "#252f38", border: "1px solid #3a4650",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: "10px", fontWeight: 800, color: "#e2d609",
+            }}>
+              {session.actor_name.trim().split(/\s+/).map(p => p[0]?.toUpperCase() ?? "").slice(0, 2).join("")}
+            </div>
+          )}
+          <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.6)", fontWeight: 500 }}>
+            {session.actor_name}
+          </span>
+        </div>
       </div>
 
-      {/* Right — sync + logout */}
-      <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+      {/* Right — sync + settings + logout */}
+      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
         <SyncIndicator state="verified" compact />
+
+        <a
+          href="/settings"
+          style={{
+            padding: "6px 12px", borderRadius: "8px",
+            background: "transparent",
+            border: "1px solid rgba(255,255,255,0.1)",
+            color: "rgba(255,255,255,0.45)",
+            fontSize: "12px", fontWeight: 600,
+            textDecoration: "none",
+            display: "flex", alignItems: "center", gap: "5px",
+            transition: "all 0.2s",
+          }}
+          aria-label="Settings"
+        >
+          ⚙️ <span style={{ display: "none" }}>Settings</span>
+        </a>
 
         <button
           type="button"

@@ -34,7 +34,7 @@ type Locale = "en" | "am";
 
 const T = {
   en: {
-    title:     "Uncle Grooming Hub",
+    title:     "Dove Barber",
     tagline:   "Premium Grooming — Addis Ababa",
     waiting:   "Waiting",
     called:    "Called",
@@ -391,7 +391,7 @@ export default function StatusBoardScreen() {
         <SyncIndicator state="verified" />
         <div style={{ height: "1px", width: "80px", background: "linear-gradient(90deg, transparent, #e2d609, transparent)" }} aria-hidden="true" />
         <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.2)", textTransform: "uppercase", letterSpacing: "0.12em" }}>
-          Uncle Grooming Hub · v1.0
+          Dove Barber · v1.0
         </div>
       </footer>
     </div>

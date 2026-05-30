@@ -8,15 +8,15 @@
 
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQueueBoard }   from "@/ui/hooks/useQueueBoard";
 import { useBarberLane }   from "@/ui/hooks/useBarberLane";
+import { useTransaction }  from "@/ui/hooks/useTransaction";
 import { useSession }      from "@/ui/hooks/useSession";
 import { TopBar }          from "@/ui/components/shell/TopBar";
 import { Badge }           from "@/ui/components/primitives/Badge";
 import { SyncIndicator }   from "@/ui/components/primitives/SyncIndicator";
-import { sessionService }  from "@/core/session/session.service";
 import {
   checkInCustomer,
   callCustomer,
@@ -41,17 +41,67 @@ const SERVICES = [
 ] as const;
 
 type ServiceId = typeof SERVICES[number]["id"];
-type Tab = "checkin" | "queue";
+type Tab = "checkin" | "queue" | "reservations";
 
 // ─── Barber option — merges roster + live projection status ───────────────────
 
 interface BarberOption {
-  id:     string;
-  name:   string;
-  status: BarberLaneView["status"];
+  id:          string;
+  name:        string;
+  status:      BarberLaneView["status"];
+  avatar_url?: string | null;
 }
 
-// ─── Status dot ───────────────────────────────────────────────────────────────
+// ─── Barber Avatar with status ring ──────────────────────────────────────────
+
+function BarberAvatar({
+  barber,
+  size = 40,
+}: {
+  barber: BarberOption;
+  size?:  number;
+}) {
+  const ringColor = {
+    AVAILABLE:  "#10b981",
+    CALLED:     "#f59e0b",
+    IN_SERVICE: "#10b981",
+    ON_BREAK:   "#6b7280",
+    OFFLINE:    "#374151",
+  }[barber.status] ?? "#374151";
+
+  const initials = barber.name.trim().split(/\s+/).map(p => p[0]?.toUpperCase() ?? "").slice(0, 2).join("");
+
+  return (
+    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
+      {barber.avatar_url ? (
+        <img
+          src={barber.avatar_url}
+          alt={barber.name}
+          width={size} height={size}
+          style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", border: `2px solid ${ringColor}` }}
+        />
+      ) : (
+        <div style={{
+          width: size, height: size, borderRadius: "50%",
+          background: "linear-gradient(135deg, #252f38, #1e262d)",
+          border: `2px solid ${ringColor}`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: size * 0.32, fontWeight: 800, color: "#e2d609",
+        }}>
+          {initials || "?"}
+        </div>
+      )}
+      {/* Status dot */}
+      <div style={{
+        position: "absolute", bottom: 0, right: 0,
+        width: size * 0.28, height: size * 0.28, borderRadius: "50%",
+        background: ringColor, border: "2px solid #0f1317",
+      }} />
+    </div>
+  );
+}
+
+// ─── Status dot (kept for queue rows) ────────────────────────────────────────
 
 function StatusDot({ status }: { status: BarberLaneView["status"] }) {
   const color = {
@@ -179,21 +229,38 @@ function CheckInForm({
 
       {/* Barber */}
       <div>
-        <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px" }}>
+        <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>
           Preferred Barber
         </label>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+          {/* Any Available */}
           <button type="button" onClick={() => setBarberId("")}
-            style={{ padding: "7px 14px", borderRadius: "9999px", background: barberId === "" ? "rgba(226,214,9,0.1)" : "transparent", border: `1.5px solid ${barberId === "" ? "#e2d609" : "#2d3840"}`, color: barberId === "" ? "#e2d609" : "rgba(255,255,255,0.5)", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
-            Any Available
+            style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", padding: "10px 14px", borderRadius: "12px", background: barberId === "" ? "rgba(226,214,9,0.1)" : "#1e262d", border: `1.5px solid ${barberId === "" ? "#e2d609" : "#2d3840"}`, cursor: "pointer", minWidth: "64px", transition: "all 0.15s" }}>
+            <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: barberId === "" ? "rgba(226,214,9,0.15)" : "#252f38", border: `2px solid ${barberId === "" ? "#e2d609" : "#3a4650"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" }}>
+              ✂️
+            </div>
+            <span style={{ fontSize: "11px", fontWeight: 600, color: barberId === "" ? "#e2d609" : "rgba(255,255,255,0.5)", whiteSpace: "nowrap" }}>Any</span>
           </button>
-          {barberOptions.map(b => (
-            <button key={b.id} type="button" onClick={() => setBarberId(b.id)}
-              style={{ display: "flex", alignItems: "center", gap: "6px", padding: "7px 14px", borderRadius: "9999px", background: barberId === b.id ? "rgba(226,214,9,0.1)" : "transparent", border: `1.5px solid ${barberId === b.id ? "#e2d609" : "#2d3840"}`, color: barberId === b.id ? "#e2d609" : "rgba(255,255,255,0.5)", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
-              <StatusDot status={b.status} />
-              {b.name}
-            </button>
-          ))}
+          {/* Barber cards */}
+          {barberOptions.map(b => {
+            const isSel  = barberId === b.id;
+            const isBusy = b.status === "IN_SERVICE" || b.status === "CALLED";
+            return (
+              <button key={b.id} type="button" onClick={() => setBarberId(b.id)}
+                title={isBusy ? `${b.name} is currently busy — customer will wait` : b.name}
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", padding: "10px 12px", borderRadius: "12px", background: isSel ? "rgba(226,214,9,0.1)" : "#1e262d", border: `1.5px solid ${isSel ? "#e2d609" : "#2d3840"}`, cursor: "pointer", minWidth: "64px", transition: "all 0.15s", position: "relative" }}>
+                <BarberAvatar barber={b} size={40} />
+                <span style={{ fontSize: "11px", fontWeight: 600, color: isSel ? "#e2d609" : "rgba(255,255,255,0.6)", whiteSpace: "nowrap", maxWidth: "64px", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {b.name.split(" ")[0]}
+                </span>
+                {isBusy && (
+                  <span style={{ position: "absolute", top: "4px", right: "4px", fontSize: "8px", background: "rgba(245,158,11,0.9)", color: "#0f1317", borderRadius: "4px", padding: "1px 4px", fontWeight: 700 }}>
+                    BUSY
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -307,11 +374,13 @@ function ActionPanel({ entry: initialEntry, barberOptions, sessionId, onClose }:
 
   // ── Derived state ───────────────────────────────────────────────────────────
   const selectedBarber = barberOptions.find(b => b.id === selectedBarberId);
-  // Barbers who are IN_SERVICE or CALLED cannot take new customers
-  const barberBusy = selectedBarber?.status === "IN_SERVICE" || selectedBarber?.status === "CALLED";
-  // Can only CALL if barber is AVAILABLE (not just assigned)
+  // Can only CALL if a barber is selected AND they are AVAILABLE right now
   const canCall    = selectedBarberId !== "" && selectedBarber?.status === "AVAILABLE";
+  const barberBusy = selectedBarber?.status === "IN_SERVICE" || selectedBarber?.status === "CALLED";
   const isTransfer = !!entry.preferred_barber_id && selectedBarberId !== "" && selectedBarberId !== entry.preferred_barber_id;
+
+  // Entry is locked — no actions allowed once CALLED or IN_SERVICE
+  const isLocked = entry.status === "CALLED" || entry.status === "IN_SERVICE";
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -436,33 +505,25 @@ function ActionPanel({ entry: initialEntry, barberOptions, sessionId, onClose }:
           Assign to Barber
         </label>
         {barberOptions.length === 0 ? (
-          <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.3)" }}>No barbers in roster — check operator seed</p>
+          <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.3)" }}>No barbers in roster</p>
         ) : (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
             {barberOptions.map(b => {
               const isSel   = b.id === selectedBarberId;
               const isPref  = b.id === entry.preferred_barber_id;
               const busy    = b.status === "IN_SERVICE" || b.status === "CALLED";
-              const canPick = !busy; // can assign if not actively serving someone
+              const canPick = !busy;
               return (
                 <button key={b.id} type="button"
                   onClick={() => { if (canPick) { setSelectedBarberId(b.id); setTransferConsent(false); } }}
                   disabled={!canPick}
-                  title={busy ? `${b.name} is currently ${b.status.toLowerCase().replace("_", " ")} — cannot assign` : undefined}
-                  style={{ display: "flex", alignItems: "center", gap: "6px", padding: "7px 12px", borderRadius: "9999px",
-                    background: isSel ? "rgba(226,214,9,0.1)" : "transparent",
-                    border: `1.5px solid ${isSel ? "#e2d609" : isPref ? "rgba(226,214,9,0.3)" : busy ? "rgba(255,255,255,0.06)" : "#2d3840"}`,
-                    color: busy ? "rgba(255,255,255,0.2)" : isSel ? "#e2d609" : "rgba(255,255,255,0.7)",
-                    fontSize: "12px", fontWeight: 600,
-                    cursor: canPick ? "pointer" : "not-allowed",
-                    opacity: busy ? 0.5 : 1,
-                  }}>
-                  <StatusDot status={b.status} />
-                  {b.name}
-                  {isPref && !busy && <span style={{ fontSize: "9px", color: "#e2d609", opacity: 0.7 }}>★</span>}
-                  {busy && <span style={{ fontSize: "10px" }}>({b.status.toLowerCase().replace("_", " ")})</span>}
-                  {b.status === "OFFLINE" && !busy && <span style={{ fontSize: "10px", opacity: 0.5 }}>(offline)</span>}
-                  {b.status === "ON_BREAK" && <span style={{ fontSize: "10px", opacity: 0.5 }}>(break)</span>}
+                  title={busy ? `${b.name} is ${b.status.toLowerCase().replace("_", " ")}` : b.name}
+                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "5px", padding: "8px 10px", borderRadius: "12px", background: isSel ? "rgba(226,214,9,0.1)" : "transparent", border: `1.5px solid ${isSel ? "#e2d609" : isPref ? "rgba(226,214,9,0.3)" : "#2d3840"}`, cursor: canPick ? "pointer" : "not-allowed", opacity: busy ? 0.45 : 1, minWidth: "56px", transition: "all 0.15s" }}>
+                  <BarberAvatar barber={b} size={36} />
+                  <span style={{ fontSize: "10px", fontWeight: 600, color: isSel ? "#e2d609" : "rgba(255,255,255,0.6)", whiteSpace: "nowrap", maxWidth: "56px", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {b.name.split(" ")[0]}
+                    {isPref && !busy && " ★"}
+                  </span>
                 </button>
               );
             })}
@@ -485,53 +546,73 @@ function ActionPanel({ entry: initialEntry, barberOptions, sessionId, onClose }:
         </div>
       )}
 
-      {/* Call to Chair */}
-      <button
-        onClick={handleCall}
-        disabled={!canCall || !!loading || (isTransfer && !transferConsent)}
-        style={{ width: "100%", padding: "14px", borderRadius: "9999px", background: canCall && (!isTransfer || transferConsent) ? "#e2d609" : "rgba(226,214,9,0.15)", color: canCall && (!isTransfer || transferConsent) ? "#0f1317" : "rgba(255,255,255,0.25)", fontSize: "14px", fontWeight: 800, border: "none", cursor: canCall && (!isTransfer || transferConsent) ? "pointer" : "not-allowed", boxShadow: canCall && (!isTransfer || transferConsent) ? "0 0 24px rgba(226,214,9,0.2)" : "none", transition: "all 0.2s" }}
-      >
-        {loading === "call" ? "Calling…" : isTransfer ? "Transfer & Call to Chair →" : "Call to Chair →"}
-      </button>
-
-      {/* Status hints */}
-      {!selectedBarberId && <p style={{ textAlign: "center", fontSize: "12px", color: "rgba(255,255,255,0.3)", marginTop: "-8px" }}>Select a barber above</p>}
-      {selectedBarberId && barberBusy && <p style={{ textAlign: "center", fontSize: "12px", color: "rgba(255,255,255,0.3)", marginTop: "-8px" }}>{selectedBarber?.name} is {selectedBarber?.status.toLowerCase().replace("_", " ")} — select another</p>}
-      {isTransfer && !transferConsent && <p style={{ textAlign: "center", fontSize: "12px", color: "rgba(245,158,11,0.6)", marginTop: "-8px" }}>Confirm consent above to proceed</p>}
-
-      {/* Confirmation dialogs */}
-      {confirm ? (
-        <div style={{ padding: "16px", borderRadius: "12px", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.25)" }}>
-          <p style={{ fontSize: "14px", fontWeight: 700, color: "#f87171", marginBottom: "6px" }}>
-            {confirm === "noshow" ? "⚠️ Mark as No-Show?" : "⚠️ Cancel this spot?"}
-          </p>
-          <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", marginBottom: "14px", lineHeight: 1.5 }}>
-            {confirm === "noshow"
-              ? "Records that the customer was called but didn't appear. Cannot be undone. Counts toward no-show history."
-              : "Removes the customer from the queue at their request. Cannot be undone."}
-          </p>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button onClick={() => setConfirm(null)} style={{ flex: 1, padding: "10px", borderRadius: "9999px", background: "transparent", border: "1px solid #2d3840", color: "rgba(255,255,255,0.5)", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
-              Keep in Queue
-            </button>
-            <button onClick={confirm === "noshow" ? handleNoShow : handleCancel} disabled={!!loading}
-              style={{ flex: 1, padding: "10px", borderRadius: "9999px", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", color: "#f87171", fontSize: "13px", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer" }}>
-              {loading ? "…" : confirm === "noshow" ? "Yes, No-Show" : "Yes, Cancel"}
-            </button>
+      {/* ── LOCKED: entry is CALLED or IN_SERVICE — no actions allowed ── */}
+      {isLocked ? (
+        <div style={{ padding: "16px", borderRadius: "12px", background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)", textAlign: "center" }}>
+          <div style={{ fontSize: "20px", marginBottom: "8px" }}>
+            {entry.status === "IN_SERVICE" ? "✂️" : "📢"}
           </div>
+          <p style={{ fontSize: "14px", fontWeight: 700, color: entry.status === "IN_SERVICE" ? "#10b981" : "#f59e0b", marginBottom: "4px" }}>
+            {entry.status === "IN_SERVICE" ? "Service in progress" : "Called to chair"}
+          </p>
+          <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)", lineHeight: 1.5 }}>
+            {entry.status === "IN_SERVICE"
+              ? "No actions available while service is in progress. The barber will complete the service."
+              : "Customer has been called. Waiting for barber to start service."}
+          </p>
         </div>
       ) : (
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button onClick={() => setConfirm("noshow")} style={{ flex: 1, padding: "11px", borderRadius: "9999px", background: "transparent", color: "rgba(245,158,11,0.8)", border: "1px solid rgba(245,158,11,0.25)", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
-            Didn't Show Up
+        <>
+          {/* Call to Chair */}
+          <button
+            type="button"
+            onClick={handleCall}
+            disabled={!canCall || !!loading || (isTransfer && !transferConsent)}
+            style={{ width: "100%", padding: "14px", borderRadius: "9999px", background: canCall && (!isTransfer || transferConsent) ? "#e2d609" : "rgba(226,214,9,0.15)", color: canCall && (!isTransfer || transferConsent) ? "#0f1317" : "rgba(255,255,255,0.25)", fontSize: "14px", fontWeight: 800, border: "none", cursor: canCall && (!isTransfer || transferConsent) ? "pointer" : "not-allowed", boxShadow: canCall && (!isTransfer || transferConsent) ? "0 0 24px rgba(226,214,9,0.2)" : "none", transition: "all 0.2s" }}
+          >
+            {loading === "call" ? "Calling…" : isTransfer ? "Transfer & Call to Chair →" : "Call to Chair →"}
           </button>
-          <button onClick={() => setConfirm("cancel")} style={{ flex: 1, padding: "11px", borderRadius: "9999px", background: "transparent", color: "rgba(239,68,68,0.7)", border: "1px solid rgba(239,68,68,0.2)", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
-            Customer Left
-          </button>
-        </div>
+
+          {/* Status hints */}
+          {!selectedBarberId && <p style={{ textAlign: "center", fontSize: "12px", color: "rgba(255,255,255,0.3)", marginTop: "-8px" }}>Select a barber above</p>}
+          {selectedBarberId && barberBusy && <p style={{ textAlign: "center", fontSize: "12px", color: "rgba(255,255,255,0.3)", marginTop: "-8px" }}>{selectedBarber?.name} is {selectedBarber?.status.toLowerCase().replace("_", " ")} — select another</p>}
+          {isTransfer && !transferConsent && <p style={{ textAlign: "center", fontSize: "12px", color: "rgba(245,158,11,0.6)", marginTop: "-8px" }}>Confirm consent above to proceed</p>}
+
+          {/* Confirmation dialogs */}
+          {confirm ? (
+            <div style={{ padding: "16px", borderRadius: "12px", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.25)" }}>
+              <p style={{ fontSize: "14px", fontWeight: 700, color: "#f87171", marginBottom: "6px" }}>
+                {confirm === "noshow" ? "⚠️ Mark as No-Show?" : "⚠️ Cancel this spot?"}
+              </p>
+              <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", marginBottom: "14px", lineHeight: 1.5 }}>
+                {confirm === "noshow"
+                  ? "Records that the customer was called but didn't appear. Cannot be undone."
+                  : "Removes the customer from the queue at their request. Cannot be undone."}
+              </p>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button type="button" onClick={() => setConfirm(null)} style={{ flex: 1, padding: "10px", borderRadius: "9999px", background: "transparent", border: "1px solid #2d3840", color: "rgba(255,255,255,0.5)", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+                  Keep in Queue
+                </button>
+                <button type="button" onClick={confirm === "noshow" ? handleNoShow : handleCancel} disabled={!!loading}
+                  style={{ flex: 1, padding: "10px", borderRadius: "9999px", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", color: "#f87171", fontSize: "13px", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer" }}>
+                  {loading ? "…" : confirm === "noshow" ? "Yes, No-Show" : "Yes, Cancel"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button type="button" onClick={() => setConfirm("noshow")} style={{ flex: 1, padding: "11px", borderRadius: "9999px", background: "transparent", color: "rgba(245,158,11,0.8)", border: "1px solid rgba(245,158,11,0.25)", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+                Didn't Show Up
+              </button>
+              <button type="button" onClick={() => setConfirm("cancel")} style={{ flex: 1, padding: "11px", borderRadius: "9999px", background: "transparent", color: "rgba(239,68,68,0.7)", border: "1px solid rgba(239,68,68,0.2)", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+                Customer Left
+              </button>
+            </div>
+          )}
+        </>
       )}
 
-      <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.3)", cursor: "pointer", fontSize: "12px", textAlign: "center", padding: "4px" }}>
+      <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.3)", cursor: "pointer", fontSize: "12px", textAlign: "center", padding: "4px" }}>
         ← Back to queue
       </button>
     </div>
@@ -541,46 +622,83 @@ function ActionPanel({ entry: initialEntry, barberOptions, sessionId, onClose }:
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function CashierScreen() {
-  const { view: queue }  = useQueueBoard();
-  const { view: lanes }  = useBarberLane();
-  const { session }      = useSession();
-  const [tab,      setTab]      = useState<Tab>("checkin");
+  const { view: queue }        = useQueueBoard();
+  const { view: lanes }        = useBarberLane();
+  const { view: ledger }       = useTransaction();
+  const { session }            = useSession();
+  const [tab,      setTab]     = useState<Tab>("checkin");
   const [selected, setSelected] = useState<QueueEntryView | null>(null);
+
+  // Barbers fetched from cloud — replaces the removed sessionService.getRoster()
+  const [cloudBarbers, setCloudBarbers] = useState<{ id: string; name: string; avatar_url?: string | null }[]>([]);
+  useEffect(() => {
+    fetch("/api/auth/list-operators")
+      .then(r => r.json())
+      .then((body: { operators?: Array<{ actor_id: string; name: string; role: string; barber_id: string | null; avatar_url?: string | null }> }) => {
+        const barbers = (body.operators ?? [])
+          .filter(op => op.role === "BARBER" && op.barber_id)
+          .map(op => ({ id: op.barber_id!, name: op.name, avatar_url: op.avatar_url ?? null }));
+        setCloudBarbers(barbers);
+      })
+      .catch(() => {});
+  }, []);
 
   if (!session) return null;
 
-  // Build barberOptions: roster (always present) merged with live projection status
-  const rosterBarbers = sessionService.getRoster()
-    .filter(op => op.role === "BARBER" && op.barber_id)
-    .map(op => ({ id: op.barber_id!, name: op.name }));
-
-  const barberOptions: BarberOption[] = rosterBarbers.map(rb => {
+  // Merge cloud roster with live projection status + avatar
+  const barberOptions: BarberOption[] = cloudBarbers.map(rb => {
     const lane = lanes?.lanes.find(l => l.barber_id === rb.id);
-    return { id: rb.id, name: rb.name, status: lane?.status ?? "OFFLINE" };
+    return { id: rb.id, name: rb.name, status: lane?.status ?? "OFFLINE", avatar_url: rb.avatar_url };
   });
 
-  const waiting   = queue?.entries      ?? [];
-  const reserved  = queue?.reservations ?? [];
-  const called    = queue?.called       ?? [];
-  const inService = queue?.in_service   ?? [];
+  // Also include barbers visible in projection but not yet in cloud roster
+  lanes?.lanes.forEach(lane => {
+    if (!barberOptions.find(b => b.id === lane.barber_id)) {
+      barberOptions.push({ id: lane.barber_id, name: lane.barber_name, status: lane.status, avatar_url: null });
+    }
+  });
+
+  const waiting      = queue?.entries      ?? [];
+  const reserved     = queue?.reservations ?? [];
+  const called       = queue?.called       ?? [];
+  const inService    = queue?.in_service   ?? [];
   const totalWaiting = queue?.total_waiting ?? 0;
-  const allActive = [...reserved, ...waiting, ...called];
+  const allActive    = [...reserved, ...waiting, ...called];
+
+  // Today's financial summary
+  const todayRevenue = ledger?.settled_today.reduce((s, t) => s + t.total_etb, 0) ?? 0;
+  const pendingCount = ledger?.active.filter(t => t.status === "PAYMENT_PENDING").length ?? 0;
 
   return (
     <div style={{ minHeight: "100dvh", background: "#0f1317", display: "flex", flexDirection: "column" }}>
       <TopBar session={session} />
 
+      {/* Balance strip */}
+      <div style={{ display: "flex", gap: "1px", background: "#2d3840", flexShrink: 0 }}>
+        {[
+          { label: "Waiting",  value: totalWaiting,  color: "#3b82f6", suffix: "" },
+          { label: "Pending",  value: pendingCount,  color: "#f59e0b", suffix: "" },
+          { label: "Settled",  value: todayRevenue,  color: "#10b981", suffix: " ETB" },
+        ].map(({ label, value, color, suffix }) => (
+          <div key={label} style={{ flex: 1, padding: "8px 12px", background: "#171d22", textAlign: "center" }}>
+            <div style={{ fontSize: "16px", fontWeight: 900, color }}>{value.toLocaleString()}{suffix}</div>
+            <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: "1px" }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
       {/* Tabs */}
       <div style={{ display: "flex", background: "#171d22", borderBottom: "1px solid #2d3840", flexShrink: 0 }}>
         {([
-          { id: "checkin" as Tab, label: "Check In",  count: null },
-          { id: "queue"   as Tab, label: "Queue",     count: totalWaiting },
+          { id: "checkin"      as Tab, label: "Check In",     count: null },
+          { id: "queue"        as Tab, label: "Queue",        count: totalWaiting },
+          { id: "reservations" as Tab, label: "Reservations", count: null },
         ]).map(t => (
-          <button key={t.id} onClick={() => { setTab(t.id); setSelected(null); }}
-            style={{ flex: 1, padding: "14px 16px", background: "transparent", border: "none", borderBottom: `2px solid ${tab === t.id ? "#e2d609" : "transparent"}`, color: tab === t.id ? "#e2d609" : "rgba(255,255,255,0.4)", fontSize: "13px", fontWeight: tab === t.id ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+          <button key={t.id} type="button" onClick={() => { setTab(t.id); setSelected(null); }}
+            style={{ flex: 1, padding: "13px 8px", background: "transparent", border: "none", borderBottom: `2px solid ${tab === t.id ? "#e2d609" : "transparent"}`, color: tab === t.id ? "#e2d609" : "rgba(255,255,255,0.4)", fontSize: "12px", fontWeight: tab === t.id ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
             {t.label}
             {t.count !== null && t.count > 0 && (
-              <span style={{ padding: "1px 7px", borderRadius: "9999px", background: tab === t.id ? "rgba(226,214,9,0.15)" : "rgba(255,255,255,0.08)", color: tab === t.id ? "#e2d609" : "rgba(255,255,255,0.4)", fontSize: "11px", fontWeight: 700 }}>
+              <span style={{ padding: "1px 6px", borderRadius: "9999px", background: tab === t.id ? "rgba(226,214,9,0.15)" : "rgba(255,255,255,0.08)", color: tab === t.id ? "#e2d609" : "rgba(255,255,255,0.4)", fontSize: "10px", fontWeight: 700 }}>
                 {t.count}
               </span>
             )}
@@ -690,8 +808,223 @@ export default function CashierScreen() {
               </AnimatePresence>
             </motion.div>
           )}
+
+          {/* Reservations Tab */}
+          {tab === "reservations" && (
+            <ReservationsTab barberOptions={barberOptions} sessionId={session.session_id} />
+          )}
+
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+// ─── Reservation Requests Tab ─────────────────────────────────────────────────
+// Reads from Supabase reservation_requests table (not the event journal).
+// These are customer requests submitted via /reserve — cashier converts to walk-in.
+
+interface ReservationRequest {
+  id:                  string;
+  customer_name:       string;
+  phone:               string;
+  preferred_barber_id: string | null;
+  requested_date:      string;
+  requested_time:      string;
+  services:            Array<{ id: string; name: string; price_etb: number }>;
+  notes:               string | null;
+  status:              "PENDING" | "CONFIRMED" | "CANCELLED" | "CONVERTED";
+  created_at:          string;
+}
+
+function ReservationsTab({ barberOptions, sessionId }: { barberOptions: BarberOption[]; sessionId: string }) {
+  const [requests,   setRequests]   = useState<ReservationRequest[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState("");
+  const [converting, setConverting] = useState<string | null>(null);
+  const [converted,  setConverted]  = useState<Set<string>>(new Set());
+
+  const load = async () => {
+    setLoading(true); setError("");
+    try {
+      const resp = await fetch("/api/reserve/list");
+      if (!resp.ok) { setError("Failed to load reservations"); return; }
+      const body = await resp.json() as { requests: ReservationRequest[] };
+      setRequests(body.requests ?? []);
+    } catch { setError("Network error"); }
+    finally { setLoading(false); }
+  };
+
+  // Load on mount and auto-refresh every 30s
+  useEffect(() => {
+    void load();
+    const id = setInterval(() => void load(), 30_000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleConvertToWalkIn = async (req: ReservationRequest) => {
+    if (converting) return;
+    setConverting(req.id);
+    try {
+      const { journalService } = await import("@/core/journal/journal.service");
+      const { checkInCustomer, addServiceIntent } = await import("@/core/actions/queue.actions");
+      const { issueQueueToken } = await import("@/core/queue/queue-token");
+      const aggregateId = crypto.randomUUID();
+      const token = issueQueueToken();
+
+      await checkInCustomer({
+        aggregateId,
+        aggregateVersion: await journalService.getNextAggregateVersion(aggregateId),
+        sessionId,
+        customerUuid:      crypto.randomUUID(),
+        preferredBarberId: req.preferred_barber_id || null,
+        checkinMethod:     "walk-in",
+        customerName:      req.customer_name,
+        queueToken:        token,
+        contactHandle:     req.phone,
+      } as Parameters<typeof checkInCustomer>[0]);
+
+      // Add services as intents
+      for (const svc of req.services ?? []) {
+        const v = await journalService.getNextAggregateVersion(aggregateId);
+        await addServiceIntent({ aggregateId, aggregateVersion: v, sessionId, serviceId: svc.id });
+      }
+
+      // Mark as converted in Supabase
+      await fetch("/api/reserve/update-status", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: req.id, status: "CONVERTED" }),
+      });
+      setConverted(s => new Set([...s, req.id]));
+    } catch (e) { console.error("Convert failed:", e); }
+    finally { setConverting(null); }
+  };
+
+  const pending = requests.filter(r => r.status === "PENDING" && !converted.has(r.id));
+  const done    = requests.filter(r => r.status !== "PENDING" || converted.has(r.id));
+
+  // Is the date in the past?
+  const isPast = (dateStr: string) => dateStr < new Date().toISOString().split("T")[0];
+
+  return (
+    <motion.div key="reservations" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
+      style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
+      <div style={{ maxWidth: "600px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "12px" }}>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: "#e2d609", textTransform: "uppercase", letterSpacing: "0.15em" }}>
+              Reservation Requests
+              {pending.length > 0 && (
+                <span style={{ marginLeft: "8px", padding: "1px 7px", borderRadius: "9999px", background: "rgba(139,92,246,0.15)", color: "#8b5cf6", fontSize: "10px" }}>
+                  {pending.length} pending
+                </span>
+              )}
+            </span>
+            <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.35)", marginTop: "3px" }}>
+              Submitted via the booking page. Press "Check In Now" to add to queue.
+            </p>
+          </div>
+          <button type="button" onClick={load} disabled={loading}
+            style={{ background: "none", border: "1px solid #2d3840", color: "rgba(255,255,255,0.4)", borderRadius: "8px", padding: "6px 12px", fontSize: "12px", cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.5 : 1 }}>
+            {loading ? "…" : "↻"}
+          </button>
+        </div>
+
+        {loading && requests.length === 0 ? (
+          <div style={{ padding: "32px", textAlign: "center" }}><p style={{ fontSize: "13px", color: "rgba(255,255,255,0.3)" }}>Loading…</p></div>
+        ) : error ? (
+          <div style={{ padding: "14px 16px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <p style={{ fontSize: "13px", color: "#f87171" }}>{error}</p>
+            <button type="button" onClick={load} style={{ background: "none", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: "8px", padding: "5px 10px", fontSize: "12px", cursor: "pointer" }}>Retry</button>
+          </div>
+        ) : pending.length === 0 && done.length === 0 ? (
+          <div style={{ padding: "48px 20px", textAlign: "center", background: "#1e262d", borderRadius: "12px", border: "1px solid #2d3840" }}>
+            <div style={{ fontSize: "28px", marginBottom: "10px" }}>📅</div>
+            <p style={{ fontSize: "14px", color: "rgba(255,255,255,0.3)" }}>No reservation requests yet</p>
+          </div>
+        ) : (
+          <>
+            {pending.map(req => {
+              const barber      = barberOptions.find(b => b.id === req.preferred_barber_id);
+              const isConverting = converting === req.id;
+              const past        = isPast(req.requested_date);
+              const totalEtb    = (req.services ?? []).reduce((s, sv) => s + sv.price_etb, 0);
+
+              return (
+                <div key={req.id} style={{ padding: "16px", background: "#1e262d", borderRadius: "12px", border: `1px solid ${past ? "rgba(245,158,11,0.3)" : "rgba(139,92,246,0.3)"}`, display: "flex", flexDirection: "column", gap: "12px" }}>
+
+                  {/* Header */}
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "4px" }}>
+                        <span style={{ fontSize: "15px", fontWeight: 800, color: "#f5f5f5" }}>{req.customer_name}</span>
+                        {past && <span style={{ padding: "2px 7px", borderRadius: "9999px", background: "rgba(245,158,11,0.12)", color: "#f59e0b", fontSize: "10px", fontWeight: 700 }}>OVERDUE</span>}
+                        {!past && <span style={{ padding: "2px 7px", borderRadius: "9999px", background: "rgba(139,92,246,0.12)", color: "#8b5cf6", fontSize: "10px", fontWeight: 700 }}>PENDING</span>}
+                      </div>
+                      <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                        <span>📞 {req.phone}</span>
+                        <span>📅 {req.requested_date} at {req.requested_time.slice(0, 5)}</span>
+                        {barber ? <span>✂️ {barber.name}</span> : <span style={{ color: "rgba(255,255,255,0.3)" }}>Any barber</span>}
+                      </div>
+                    </div>
+                    {totalEtb > 0 && (
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <div style={{ fontSize: "16px", fontWeight: 900, color: "#e2d609" }}>{totalEtb.toLocaleString()} ETB</div>
+                        <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.3)" }}>{(req.services ?? []).length} service{(req.services ?? []).length !== 1 ? "s" : ""}</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Services */}
+                  {(req.services ?? []).length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                      {(req.services ?? []).map(svc => (
+                        <span key={svc.id} style={{ padding: "3px 10px", borderRadius: "9999px", background: "rgba(226,214,9,0.07)", border: "1px solid rgba(226,214,9,0.2)", fontSize: "11px", color: "#e2d609", fontWeight: 600 }}>
+                          {svc.name} · {svc.price_etb} ETB
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Customer note */}
+                  {req.notes && (
+                    <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)", fontStyle: "italic", margin: 0 }}>"{req.notes}"</p>
+                  )}
+
+                  {/* Action */}
+                  <button type="button" onClick={() => handleConvertToWalkIn(req)} disabled={isConverting}
+                    style={{ padding: "11px 18px", borderRadius: "9999px", background: isConverting ? "rgba(226,214,9,0.3)" : "#e2d609", color: "#0f1317", fontSize: "13px", fontWeight: 800, border: "none", cursor: isConverting ? "not-allowed" : "pointer", alignSelf: "flex-start", transition: "all 0.15s" }}>
+                    {isConverting ? "Adding to queue…" : "→ Check In Now"}
+                  </button>
+                </div>
+              );
+            })}
+
+            {done.length > 0 && (
+              <div style={{ marginTop: "4px" }}>
+                <div style={{ padding: "6px 0" }}>
+                  <span style={{ fontSize: "10px", fontWeight: 700, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Handled ({done.length})</span>
+                </div>
+                {done.map(req => (
+                  <div key={req.id} style={{ padding: "12px 16px", background: "rgba(255,255,255,0.02)", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.06)", marginBottom: "6px", opacity: 0.6 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>{req.customer_name}</span>
+                      <span style={{ fontSize: "10px", color: converted.has(req.id) || req.status === "CONVERTED" ? "#10b981" : req.status === "CANCELLED" ? "#ef4444" : "#6b7280", fontWeight: 700 }}>
+                        {converted.has(req.id) ? "CONVERTED" : req.status}
+                      </span>
+                      <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)", marginLeft: "auto" }}>
+                        {req.requested_date} {req.requested_time.slice(0, 5)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </motion.div>
   );
 }
