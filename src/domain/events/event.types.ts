@@ -54,7 +54,11 @@ export type EventType =
   | "STAFF_PIN_CHANGED"             // 28 — Local (Self or Admin)
   | "STAFF_ACCOUNT_DEACTIVATED"     // 29 — Local (Admin/System Owner only)
   | "STAFF_ACCOUNT_REACTIVATED"     // 30 — Local (Admin/System Owner only)
-  | "TERMINAL_PIN_CHANGED";         // 31 — Local (Admin/System Owner only)
+  | "TERMINAL_PIN_CHANGED"          // 31 — Local (Admin/System Owner only)
+  // ── Service Catalog Management (ECS v1.4 pending) ──────────────────────────
+  | "SERVICE_REGISTERED"            // 32 — Local (Admin/System Owner only)
+  | "SERVICE_PRICE_UPDATED"         // 33 — Local (Admin/System Owner only)
+  | "SERVICE_VISIBILITY_TOGGLED";   // 34 — Local (Admin/System Owner only)
 
 /**
  * Actor roles — AGENT.md §13 (updated from 5 to 6 roles)

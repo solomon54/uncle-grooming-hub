@@ -20,15 +20,15 @@
  */
 
 import type { RxDatabase, RxCollection } from "rxdb";
-import type { AllEvents }                from "@/domain/events/event.definitions";
-import type { ActiveSession }            from "@/core/session/session.types";
-import { clockService }                  from "@/core/clock/clock.service";
-import { terminalIdentity }              from "@/core/terminal/terminal.identity";
+import type { AllEvents } from "@/domain/events/event.definitions";
+import type { ActiveSession } from "@/core/session/session.types";
+import { clockService } from "@/core/clock/clock.service";
+import { terminalIdentity } from "@/core/terminal/terminal.identity";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type CommitResult =
-  | { success: true;  event_id: string; hlc_timestamp: string }
+  | { success: true; event_id: string; hlc_timestamp: string }
   | { success: false; reason: CommitRejectionReason };
 
 export type CommitRejectionReason =
@@ -63,14 +63,14 @@ const ADMIN_ONLY_EVENTS = new Set([
 // ─── Journal document shape ───────────────────────────────────────────────────
 
 type JournalDoc = {
-  event_id:          string;
-  aggregate_id:      string;
+  event_id: string;
+  aggregate_id: string;
   aggregate_version: number;
-  event_type:        string;
-  payload:           Record<string, unknown>;
-  metadata:          Record<string, unknown>;
-  hlc:               string;
-  is_synced:         boolean;
+  event_type: string;
+  payload: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  hlc: string;
+  is_synced: boolean;
 };
 
 // ─── Journal Service ──────────────────────────────────────────────────────────
@@ -138,7 +138,7 @@ export class JournalService {
     const latest = await this.collection
       .findOne({
         selector: { aggregate_id: event.aggregate_id },
-        sort:     [{ aggregate_version: "desc" }],
+        sort: [{ aggregate_version: "desc" }],
       })
       .exec();
 
@@ -159,7 +159,7 @@ export class JournalService {
         .findOne({
           selector: {
             aggregate_id: event.aggregate_id,
-            event_type:   "SERVICE_ENGAGED",
+            event_type: "SERVICE_ENGAGED",
           },
         })
         .exec();
@@ -174,15 +174,15 @@ export class JournalService {
     const hlc = clockService.tick();
 
     await this.collection.insert({
-      event_id:          event.event_id,
-      aggregate_id:      event.aggregate_id,
+      event_id: event.event_id,
+      aggregate_id: event.aggregate_id,
       aggregate_version: event.aggregate_version,
-      event_type:        event.event_type,
-      payload:           event.payload,
+      event_type: event.event_type,
+      payload: event.payload,
       metadata: {
         ...event.metadata,
         terminal_id: terminalIdentity.terminalId,
-        actor_id:    session?.actor_id ?? "SYSTEM",
+        actor_id: session?.actor_id ?? "SYSTEM",
       },
       hlc,
       is_synced: false, // Sync engine marks true after cloud ACK (renamed from 'synced' — RxDB SC17)
@@ -213,7 +213,7 @@ export class JournalService {
     const latest = await this.collection
       .findOne({
         selector: { aggregate_id: event.aggregate_id },
-        sort:     [{ aggregate_version: "desc" }],
+        sort: [{ aggregate_version: "desc" }],
       })
       .exec();
 
@@ -226,15 +226,15 @@ export class JournalService {
     clockService.receive(hlc);
 
     await this.collection.insert({
-      event_id:          event.event_id,
-      aggregate_id:      event.aggregate_id,
+      event_id: event.event_id,
+      aggregate_id: event.aggregate_id,
       aggregate_version: event.aggregate_version,
-      event_type:        event.event_type,
-      payload:           event.payload,
+      event_type: event.event_type,
+      payload: event.payload,
       metadata: {
         ...event.metadata,
         terminal_id: (event.metadata as Record<string, unknown>).terminal_id ?? "CLOUD",
-        actor_id:    "CLOUD",
+        actor_id: "CLOUD",
       },
       hlc,
       is_synced: true,
@@ -261,7 +261,7 @@ export class JournalService {
     const docs = await this.collection
       .find({
         selector: { aggregate_id: aggregateId },
-        sort:     [{ hlc: "asc" }],
+        sort: [{ hlc: "asc" }],
       })
       .exec();
 
@@ -283,7 +283,7 @@ export class JournalService {
     const docs = await this.collection
       .find({
         selector: { hlc: { $gt: hlcTimestamp } },
-        sort:     [{ hlc: "asc" }],
+        sort: [{ hlc: "asc" }],
         limit,
       })
       .exec();
@@ -298,7 +298,7 @@ export class JournalService {
     const docs = await this.collection
       .find({
         selector: { is_synced: false },
-        sort:     [{ hlc: "asc" }],
+        sort: [{ hlc: "asc" }],
         limit,
       })
       .exec();
@@ -327,7 +327,7 @@ export class JournalService {
     const latest = await this.collection
       .findOne({
         selector: { aggregate_id: aggregateId },
-        sort:     [{ aggregate_version: "desc" }],
+        sort: [{ aggregate_version: "desc" }],
       })
       .exec();
 
@@ -353,12 +353,12 @@ export class JournalService {
 
   private docToEvent(doc: JournalDoc): AllEvents {
     return {
-      event_id:          doc.event_id,
-      aggregate_id:      doc.aggregate_id,
+      event_id: doc.event_id,
+      aggregate_id: doc.aggregate_id,
       aggregate_version: doc.aggregate_version,
-      event_type:        doc.event_type as AllEvents["event_type"],
-      payload:           doc.payload,
-      metadata:          doc.metadata as AllEvents["metadata"],
+      event_type: doc.event_type as AllEvents["event_type"],
+      payload: doc.payload,
+      metadata: doc.metadata as AllEvents["metadata"],
     } as AllEvents;
   }
 }

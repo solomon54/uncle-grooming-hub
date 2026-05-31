@@ -305,6 +305,42 @@ export interface TerminalPinChangedEvent
 }
 
 // ==========================================
+// 5.5. Service Catalog Management Events (ECS v1.4 pending)
+// ==========================================
+
+/** ECS EVENT 32 — SERVICE_REGISTERED */
+export interface ServiceRegisteredEvent
+  extends TypedEvent<{
+    service_id:  string;
+    name:        string;
+    description: string;
+    duration:    string;
+    price:       number;
+    image_url:   string;
+    featured:    boolean;
+  }> {
+  event_type: "SERVICE_REGISTERED";
+}
+
+/** ECS EVENT 33 — SERVICE_PRICE_UPDATED */
+export interface ServicePriceUpdatedEvent
+  extends TypedEvent<{
+    service_id: string;
+    price:      number;
+  }> {
+  event_type: "SERVICE_PRICE_UPDATED";
+}
+
+/** ECS EVENT 34 — SERVICE_VISIBILITY_TOGGLED */
+export interface ServiceVisibilityToggledEvent
+  extends TypedEvent<{
+    service_id: string;
+    is_active:  boolean;
+  }> {
+  event_type: "SERVICE_VISIBILITY_TOGGLED";
+}
+
+// ==========================================
 // 6. Union Type for All Events
 // ==========================================
 
@@ -338,4 +374,7 @@ export type AllEvents =
   | StaffPinChangedEvent
   | StaffAccountDeactivatedEvent
   | StaffAccountReactivatedEvent
-  | TerminalPinChangedEvent;
+  | TerminalPinChangedEvent
+  | ServiceRegisteredEvent
+  | ServicePriceUpdatedEvent
+  | ServiceVisibilityToggledEvent;

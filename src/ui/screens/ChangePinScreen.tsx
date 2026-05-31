@@ -14,8 +14,8 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { motion }                     from "framer-motion";
-import { useSession }                 from "@/ui/hooks/useSession";
+import { motion } from "framer-motion";
+import { useSession } from "@/ui/hooks/useSession";
 
 // ─── PIN Box ──────────────────────────────────────────────────────────────────
 
@@ -23,7 +23,7 @@ function PinBox({ filled, active, error, success }: {
   filled: boolean; active: boolean; error: boolean; success: boolean;
 }) {
   const border = error ? "#ef4444" : success ? "#e2d609" : active ? "#e2d609" : filled ? "#3a4650" : "#2d3840";
-  const glow   = error ? "0 0 0 3px rgba(239,68,68,0.15)" : (success || active) ? "0 0 0 3px rgba(226,214,9,0.15)" : "none";
+  const glow = error ? "0 0 0 3px rgba(239,68,68,0.15)" : (success || active) ? "0 0 0 3px rgba(226,214,9,0.15)" : "none";
   return (
     <div style={{ width: "clamp(36px,11vw,52px)", height: "clamp(44px,14vw,64px)", borderRadius: "10px", border: `2px solid ${border}`, background: success ? "rgba(226,214,9,0.12)" : filled ? "#252f38" : "#1e262d", boxShadow: glow, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s ease", flexShrink: 0 }}>
       {filled && <div style={{ width: "clamp(7px,2vw,10px)", height: "clamp(7px,2vw,10px)", borderRadius: "50%", background: success ? "#e2d609" : "rgba(255,255,255,0.85)" }} />}
@@ -44,20 +44,20 @@ function getRedirect(session: { role: string; barber_id?: string }): string {
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function ChangePinScreen() {
-  const router       = useRouter();
-  const params       = useSearchParams();
-  const { session }  = useSession();
+  const router = useRouter();
+  const params = useSearchParams();
+  const { session } = useSession();
 
   // voluntary = came from Settings, not forced first-login
   const voluntary = params.get("from") === "settings";
 
-  const [step,       setStep]       = useState<"new" | "confirm">("new");
-  const [newPin,     setNewPin]     = useState("");
+  const [step, setStep] = useState<"new" | "confirm">("new");
+  const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
-  const [status,     setStatus]     = useState<"idle" | "error" | "success">("idle");
-  const [errorMsg,   setErrorMsg]   = useState("");
-  const [loading,    setLoading]    = useState(false);
-  const [shake,      setShake]      = useState(false);
+  const [status, setStatus] = useState<"idle" | "error" | "success">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [shake, setShake] = useState(false);
 
   // FORCED mode only: redirect away if already changed PIN
   useEffect(() => {
@@ -66,7 +66,7 @@ export default function ChangePinScreen() {
     }
   }, [session, router, voluntary]);
 
-  const currentPin    = step === "new" ? newPin : confirmPin;
+  const currentPin = step === "new" ? newPin : confirmPin;
   const setCurrentPin = step === "new" ? setNewPin : setConfirmPin;
 
   // Hardware keyboard
@@ -90,8 +90,8 @@ export default function ChangePinScreen() {
   // Auto-advance step 1 → 2
   useEffect(() => {
     if (newPin.length === PIN_LENGTH && step === "new") {
-      const allSame    = newPin.split("").every(d => d === newPin[0]);
-      const sequential = ["012345","123456","234567","345678","456789","987654","876543","765432","654321","543210"].includes(newPin);
+      const allSame = newPin.split("").every(d => d === newPin[0]);
+      const sequential = ["012345", "123456", "234567", "345678", "456789", "987654", "876543", "765432", "654321", "543210"].includes(newPin);
       if (allSame || sequential) {
         setStatus("error");
         setErrorMsg("PIN is too simple — choose a less predictable combination");
@@ -106,7 +106,7 @@ export default function ChangePinScreen() {
     if (confirmPin.length === PIN_LENGTH && step === "confirm") {
       void handleSubmit();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [confirmPin]);
 
   const handleSubmit = async () => {
@@ -158,10 +158,10 @@ export default function ChangePinScreen() {
       )}
 
       {/* Brand */}
-      <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: [0.16,1,0.3,1] }}
+      <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
         style={{ marginBottom: "32px", textAlign: "center" }}>
         <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "#e2d609", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", boxShadow: "0 0 32px rgba(226,214,9,0.25)" }}>
-          <span style={{ color: "#0f1317", fontSize: "20px", fontWeight: 900 }}>U</span>
+          <span style={{ color: "#0f1317", fontSize: "20px", fontWeight: 900 }}>D</span>
         </div>
         <h1 style={{ fontSize: "clamp(18px,4vw,22px)", fontWeight: 800, color: "#f5f5f5" }}>
           {voluntary ? "Change Your PIN" : "Set Your PIN"}
@@ -174,7 +174,7 @@ export default function ChangePinScreen() {
       </motion.div>
 
       {/* Card */}
-      <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.1, ease: [0.16,1,0.3,1] }}
+      <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
         style={{ width: "100%", maxWidth: "340px", background: "#171d22", border: "1px solid #2d3840", borderRadius: "20px", padding: "clamp(20px,5vw,28px) clamp(16px,5vw,24px)" }}>
 
         {/* Step indicator */}
@@ -209,9 +209,9 @@ export default function ChangePinScreen() {
         <p style={{ textAlign: "center", fontSize: "12px", color: status === "success" ? "#e2d609" : "rgba(255,255,255,0.2)", transition: "color 0.2s", minHeight: "16px" }}>
           {status === "success" ? "✓ PIN updated — redirecting…"
             : loading ? "Saving…"
-            : step === "new"
-            ? `${PIN_LENGTH - newPin.length} digit${PIN_LENGTH - newPin.length !== 1 ? "s" : ""} remaining`
-            : `${PIN_LENGTH - confirmPin.length} digit${PIN_LENGTH - confirmPin.length !== 1 ? "s" : ""} to confirm`}
+              : step === "new"
+                ? `${PIN_LENGTH - newPin.length} digit${PIN_LENGTH - newPin.length !== 1 ? "s" : ""} remaining`
+                : `${PIN_LENGTH - confirmPin.length} digit${PIN_LENGTH - confirmPin.length !== 1 ? "s" : ""} to confirm`}
         </p>
 
         <div style={{ marginTop: "16px", padding: "10px 14px", background: "rgba(226,214,9,0.05)", borderRadius: "8px", border: "1px solid rgba(226,214,9,0.1)" }}>

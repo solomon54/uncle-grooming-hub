@@ -78,6 +78,9 @@ const EVENT_TYPE_ENUM: readonly EventType[] = [
   "LOCAL_SNAPSHOT_COMMITTED",
   "TERMINAL_RECOVERY_COMPLETED",
   "RESERVATION_EXPIRED",
+  "SERVICE_REGISTERED",
+  "SERVICE_PRICE_UPDATED",
+  "SERVICE_VISIBILITY_TOGGLED",
 ];
 
 // ===================================================================

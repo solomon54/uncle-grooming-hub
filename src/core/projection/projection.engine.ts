@@ -29,22 +29,22 @@ export type ProjectionHandler<TState> = (
 ) => TState;
 
 export interface Projection<TState> {
-  name:         string;
+  name: string;
   initialState: TState;
-  handlers:     Partial<Record<string, ProjectionHandler<TState>>>;
+  handlers: Partial<Record<string, ProjectionHandler<TState>>>;
 }
 
 interface ProjectionInstance<TState> {
   projection: Projection<TState>;
-  state:      TState;
+  state: TState;
 }
 
 // ─── Engine ───────────────────────────────────────────────────────────────────
 
 export class ProjectionEngine {
   private projections = new Map<string, ProjectionInstance<unknown>>();
-  private lastHLC:     string | null = null;
-  private listeners  = new Set<() => void>();
+  private lastHLC: string | null = null;
+  private listeners = new Set<() => void>();
 
   // ── Registration ────────────────────────────────────────────────────────────
 

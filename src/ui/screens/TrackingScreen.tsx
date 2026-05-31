@@ -24,70 +24,70 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Link                            from "next/link";
-import { useQueueBoard }               from "@/ui/hooks/useQueueBoard";
-import { useBarberLane }               from "@/ui/hooks/useBarberLane";
-import { usePusherChannelMulti }       from "@/ui/hooks/usePusherChannel";
+import Link from "next/link";
+import { useQueueBoard } from "@/ui/hooks/useQueueBoard";
+import { useBarberLane } from "@/ui/hooks/useBarberLane";
+import { usePusherChannelMulti } from "@/ui/hooks/usePusherChannel";
 import { PUSHER_CHANNELS, PUSHER_EVENTS } from "@/core/realtime/pusher.server";
 import { hlcToElapsedMinutes, formatWaitEstimate } from "@/shared/utils/hlc.utils";
-import type { QueueEntryView }         from "@/projections/queue-board.view";
-import type { BarberLaneView }         from "@/projections/barber-lane.view";
+import type { QueueEntryView } from "@/projections/queue-board.view";
+import type { BarberLaneView } from "@/projections/barber-lane.view";
 
 // ─── Service catalog (matches CashierScreen) ──────────────────────────────────
 
 const SERVICE_NAMES: Record<string, string> = {
-  classic_cut:  "Classic Cut",
-  premium_cut:  "Premium Cut",
-  beard_groom:  "Beard Grooming",
-  cut_beard:    "Cut & Beard Combo",
-  head_shave:   "Head Shave",
-  kids_cut:     "Kids Cut",
+  classic_cut: "Classic Cut",
+  premium_cut: "Premium Cut",
+  beard_groom: "Beard Grooming",
+  cut_beard: "Cut & Beard Combo",
+  head_shave: "Head Shave",
+  kids_cut: "Kids Cut",
 };
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG = {
   WAITING: {
-    color:   "#3b82f6",
-    bg:      "rgba(59,130,246,0.1)",
-    border:  "rgba(59,130,246,0.25)",
-    label:   "Waiting",
-    label_am:"በጥበቃ ላይ",
+    color: "#3b82f6",
+    bg: "rgba(59,130,246,0.1)",
+    border: "rgba(59,130,246,0.25)",
+    label: "Waiting",
+    label_am: "በጥበቃ ላይ",
   },
   RESERVED: {
-    color:   "#8b5cf6",
-    bg:      "rgba(139,92,246,0.1)",
-    border:  "rgba(139,92,246,0.25)",
-    label:   "Reserved",
-    label_am:"ቦታ ተይዟል",
+    color: "#8b5cf6",
+    bg: "rgba(139,92,246,0.1)",
+    border: "rgba(139,92,246,0.25)",
+    label: "Reserved",
+    label_am: "ቦታ ተይዟል",
   },
   CALLED: {
-    color:   "#f59e0b",
-    bg:      "rgba(245,158,11,0.1)",
-    border:  "rgba(245,158,11,0.25)",
-    label:   "Called to Chair",
-    label_am:"ወንበር ተጠርቷል",
+    color: "#f59e0b",
+    bg: "rgba(245,158,11,0.1)",
+    border: "rgba(245,158,11,0.25)",
+    label: "Called to Chair",
+    label_am: "ወንበር ተጠርቷል",
   },
   IN_SERVICE: {
-    color:   "#10b981",
-    bg:      "rgba(16,185,129,0.1)",
-    border:  "rgba(16,185,129,0.25)",
-    label:   "In Service",
-    label_am:"አገልግሎት ላይ",
+    color: "#10b981",
+    bg: "rgba(16,185,129,0.1)",
+    border: "rgba(16,185,129,0.25)",
+    label: "In Service",
+    label_am: "አገልግሎት ላይ",
   },
   EXPIRED: {
-    color:   "#6b7280",
-    bg:      "rgba(107,114,128,0.1)",
-    border:  "rgba(107,114,128,0.25)",
-    label:   "Expired",
-    label_am:"ጊዜ አልፏል",
+    color: "#6b7280",
+    bg: "rgba(107,114,128,0.1)",
+    border: "rgba(107,114,128,0.25)",
+    label: "Expired",
+    label_am: "ጊዜ አልፏል",
   },
   CANCELLED: {
-    color:   "#6b7280",
-    bg:      "rgba(107,114,128,0.1)",
-    border:  "rgba(107,114,128,0.25)",
-    label:   "Cancelled",
-    label_am:"ተሰርዟል",
+    color: "#6b7280",
+    bg: "rgba(107,114,128,0.1)",
+    border: "rgba(107,114,128,0.25)",
+    label: "Cancelled",
+    label_am: "ተሰርዟል",
   },
 } as const;
 
@@ -95,11 +95,11 @@ const STATUS_CONFIG = {
 
 function BarberDot({ status }: { status: BarberLaneView["status"] }) {
   const color = {
-    AVAILABLE:  "#10b981",
-    CALLED:     "#f59e0b",
+    AVAILABLE: "#10b981",
+    CALLED: "#f59e0b",
     IN_SERVICE: "#10b981",
-    ON_BREAK:   "#6b7280",
-    OFFLINE:    "#374151",
+    ON_BREAK: "#6b7280",
+    OFFLINE: "#374151",
   }[status] ?? "#374151";
 
   return (
@@ -151,8 +151,8 @@ interface TrackingScreenProps {
 }
 
 export default function TrackingScreen({ token }: TrackingScreenProps) {
-  const { view: queue }  = useQueueBoard();
-  const { view: lanes }  = useBarberLane();
+  const { view: queue } = useQueueBoard();
+  const { view: lanes } = useBarberLane();
   const [locale, setLocale] = useState<"en" | "am">("en");
   const [, setTick] = useState(0);
   const [notification, setNotification] = useState<string | null>(null);
@@ -163,7 +163,7 @@ export default function TrackingScreen({ token }: TrackingScreenProps) {
   usePusherChannelMulti(
     PUSHER_CHANNELS.queueToken(token),
     {
-      [PUSHER_EVENTS.queueUpdated]:   () => setTick(n => n + 1),
+      [PUSHER_EVENTS.queueUpdated]: () => setTick(n => n + 1),
       [PUSHER_EVENTS.customerCalled]: () => {
         setTick(n => n + 1);
         setNotification(locale === "en"
@@ -179,7 +179,7 @@ export default function TrackingScreen({ token }: TrackingScreenProps) {
       },
       [PUSHER_EVENTS.serviceStarted]: () => setTick(n => n + 1),
       [PUSHER_EVENTS.serviceComplete]: () => setTick(n => n + 1),
-      [PUSHER_EVENTS.paymentReady]:   () => setTick(n => n + 1),
+      [PUSHER_EVENTS.paymentReady]: () => setTick(n => n + 1),
     }
   );
 
@@ -223,8 +223,8 @@ export default function TrackingScreen({ token }: TrackingScreenProps) {
 
   const statusCfg = STATUS_CONFIG[entry.status] ?? STATUS_CONFIG.WAITING;
   const barberLane = lanes?.lanes.find(l => l.barber_id === entry.preferred_barber_id);
-  const elapsed    = hlcToElapsedMinutes(entry.checkin_hlc);
-  const waitLabel  = entry.estimated_wait_minutes > 0
+  const elapsed = hlcToElapsedMinutes(entry.checkin_hlc);
+  const waitLabel = entry.estimated_wait_minutes > 0
     ? formatWaitEstimate(entry.estimated_wait_minutes)
     : "Ready soon";
 
@@ -234,8 +234,8 @@ export default function TrackingScreen({ token }: TrackingScreenProps) {
   );
 
   const isCancellable = entry.status === "WAITING" || entry.status === "RESERVED";
-  const isCalled      = entry.status === "CALLED";
-  const isInService   = entry.status === "IN_SERVICE";
+  const isCalled = entry.status === "CALLED";
+  const isInService = entry.status === "IN_SERVICE";
 
   return (
     <div style={{
@@ -257,7 +257,7 @@ export default function TrackingScreen({ token }: TrackingScreenProps) {
             width: "28px", height: "28px", borderRadius: "7px",
             background: "#e2d609", display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <span style={{ color: "#0f1317", fontSize: "12px", fontWeight: 900 }}>U</span>
+            <span style={{ color: "#0f1317", fontSize: "12px", fontWeight: 900 }}>D</span>
           </div>
           <span style={{ fontSize: "14px", fontWeight: 700, color: "#f5f5f5" }}>
             Dove Barber
@@ -413,11 +413,11 @@ export default function TrackingScreen({ token }: TrackingScreenProps) {
                     {barberLane.barber_name}
                   </p>
                   <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)", marginTop: "2px" }}>
-                    {barberLane.status === "AVAILABLE"  ? (locale === "en" ? "Available" : "ዝግጁ") :
-                     barberLane.status === "IN_SERVICE" ? (locale === "en" ? "With a client" : "ደንበኛ ጋር") :
-                     barberLane.status === "CALLED"     ? (locale === "en" ? "Calling next" : "ቀጣዩን እየጠራ") :
-                     barberLane.status === "ON_BREAK"   ? (locale === "en" ? "On break" : "እረፍት ላይ") :
-                     (locale === "en" ? "Offline" : "ከስራ ውጭ")}
+                    {barberLane.status === "AVAILABLE" ? (locale === "en" ? "Available" : "ዝግጁ") :
+                      barberLane.status === "IN_SERVICE" ? (locale === "en" ? "With a client" : "ደንበኛ ጋር") :
+                        barberLane.status === "CALLED" ? (locale === "en" ? "Calling next" : "ቀጣዩን እየጠራ") :
+                          barberLane.status === "ON_BREAK" ? (locale === "en" ? "On break" : "እረፍት ላይ") :
+                            (locale === "en" ? "Offline" : "ከስራ ውጭ")}
                   </p>
                 </div>
                 {currentlyServing && (

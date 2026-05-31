@@ -232,7 +232,7 @@ function CheckInForm({
         <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>
           Preferred Barber
         </label>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(64px, 1fr))", gap: "8px" }}>
           {/* Any Available */}
           <button type="button" onClick={() => setBarberId("")}
             style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", padding: "10px 14px", borderRadius: "12px", background: barberId === "" ? "rgba(226,214,9,0.1)" : "#1e262d", border: `1.5px solid ${barberId === "" ? "#e2d609" : "#2d3840"}`, cursor: "pointer", minWidth: "64px", transition: "all 0.15s" }}>
@@ -269,7 +269,7 @@ function CheckInForm({
         <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: errors.intents ? "#f87171" : "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px" }}>
           Services * {intents.length > 0 && <span style={{ color: "#10b981", fontWeight: 400, textTransform: "none" }}>({intents.length} selected)</span>}
         </label>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: "8px" }}>
           {SERVICES.map(s => {
             const sel = intents.includes(s.id);
             return (
@@ -325,14 +325,14 @@ function QueueRow({ entry, isSelected, onSelect, barberOptions }: {
   const variant = ({ WAITING: "waiting", RESERVED: "reserved", CALLED: "called", IN_SERVICE: "in-service", EXPIRED: "expired", CANCELLED: "completed" } as const)[entry.status] ?? "neutral" as "waiting";
 
   return (
-    <button onClick={onSelect} style={{ width: "100%", textAlign: "left", padding: "14px 16px", background: isSelected ? "#252f38" : "transparent", border: "none", borderBottom: "1px solid #1e262d", cursor: "pointer", display: "flex", alignItems: "center", gap: "12px" }}>
+    <button onClick={onSelect} style={{ width: "100%", textAlign: "left", padding: "clamp(10px,3vw,14px) clamp(10px,3vw,16px)", background: isSelected ? "#252f38" : "transparent", border: "none", borderBottom: "1px solid #1e262d", cursor: "pointer", display: "flex", alignItems: "center", gap: "clamp(8px,2vw,12px)" }}>
       <div style={{ width: "28px", height: "28px", borderRadius: "50%", flexShrink: 0, background: isSelected ? "#e2d609" : "#2d3840", color: isSelected ? "#0f1317" : "rgba(255,255,255,0.5)", fontSize: "11px", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
         {entry.position}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "14px", fontWeight: 900, color: "#e2d609" }}>{entry.queue_token || "—"}</span>
-          <span style={{ fontSize: "14px", fontWeight: 600, color: "#f5f5f5", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.customer_display}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+          <span style={{ fontSize: "clamp(12px,3.5vw,14px)", fontWeight: 900, color: "#e2d609" }}>{entry.queue_token || "—"}</span>
+          <span style={{ fontSize: "clamp(12px,3.5vw,14px)", fontWeight: 600, color: "#f5f5f5", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{entry.customer_display}</span>
         </div>
         <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)", marginTop: "2px", display: "flex", alignItems: "center", gap: "6px" }}>
           {barber && <StatusDot status={barber.status} />}
@@ -507,7 +507,7 @@ function ActionPanel({ entry: initialEntry, barberOptions, sessionId, onClose }:
         {barberOptions.length === 0 ? (
           <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.3)" }}>No barbers in roster</p>
         ) : (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(56px, 1fr))", gap: "8px" }}>
             {barberOptions.map(b => {
               const isSel   = b.id === selectedBarberId;
               const isPref  = b.id === entry.preferred_barber_id;
@@ -568,7 +568,7 @@ function ActionPanel({ entry: initialEntry, barberOptions, sessionId, onClose }:
             type="button"
             onClick={handleCall}
             disabled={!canCall || !!loading || (isTransfer && !transferConsent)}
-            style={{ width: "100%", padding: "14px", borderRadius: "9999px", background: canCall && (!isTransfer || transferConsent) ? "#e2d609" : "rgba(226,214,9,0.15)", color: canCall && (!isTransfer || transferConsent) ? "#0f1317" : "rgba(255,255,255,0.25)", fontSize: "14px", fontWeight: 800, border: "none", cursor: canCall && (!isTransfer || transferConsent) ? "pointer" : "not-allowed", boxShadow: canCall && (!isTransfer || transferConsent) ? "0 0 24px rgba(226,214,9,0.2)" : "none", transition: "all 0.2s" }}
+            style={{ width: "100%", padding: "clamp(11px,3vw,14px)", borderRadius: "9999px", background: canCall && (!isTransfer || transferConsent) ? "#e2d609" : "rgba(226,214,9,0.15)", color: canCall && (!isTransfer || transferConsent) ? "#0f1317" : "rgba(255,255,255,0.25)", fontSize: "clamp(12px,3.5vw,14px)", fontWeight: 800, border: "none", cursor: canCall && (!isTransfer || transferConsent) ? "pointer" : "not-allowed", boxShadow: canCall && (!isTransfer || transferConsent) ? "0 0 24px rgba(226,214,9,0.2)" : "none", transition: "all 0.2s" }}
           >
             {loading === "call" ? "Calling…" : isTransfer ? "Transfer & Call to Chair →" : "Call to Chair →"}
           </button>
@@ -600,11 +600,11 @@ function ActionPanel({ entry: initialEntry, barberOptions, sessionId, onClose }:
               </div>
             </div>
           ) : (
-            <div style={{ display: "flex", gap: "8px" }}>
-              <button type="button" onClick={() => setConfirm("noshow")} style={{ flex: 1, padding: "11px", borderRadius: "9999px", background: "transparent", color: "rgba(245,158,11,0.8)", border: "1px solid rgba(245,158,11,0.25)", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+              <button type="button" onClick={() => setConfirm("noshow")} style={{ flex: "1 1 120px", padding: "clamp(9px,2.5vw,11px)", borderRadius: "9999px", background: "transparent", color: "rgba(245,158,11,0.8)", border: "1px solid rgba(245,158,11,0.25)", fontSize: "clamp(11px,3vw,13px)", fontWeight: 600, cursor: "pointer" }}>
                 Didn't Show Up
               </button>
-              <button type="button" onClick={() => setConfirm("cancel")} style={{ flex: 1, padding: "11px", borderRadius: "9999px", background: "transparent", color: "rgba(239,68,68,0.7)", border: "1px solid rgba(239,68,68,0.2)", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+              <button type="button" onClick={() => setConfirm("cancel")} style={{ flex: "1 1 120px", padding: "clamp(9px,2.5vw,11px)", borderRadius: "9999px", background: "transparent", color: "rgba(239,68,68,0.7)", border: "1px solid rgba(239,68,68,0.2)", fontSize: "clamp(11px,3vw,13px)", fontWeight: 600, cursor: "pointer" }}>
                 Customer Left
               </button>
             </div>
@@ -680,9 +680,9 @@ export default function CashierScreen() {
           { label: "Pending",  value: pendingCount,  color: "#f59e0b", suffix: "" },
           { label: "Settled",  value: todayRevenue,  color: "#10b981", suffix: " ETB" },
         ].map(({ label, value, color, suffix }) => (
-          <div key={label} style={{ flex: 1, padding: "8px 12px", background: "#171d22", textAlign: "center" }}>
-            <div style={{ fontSize: "16px", fontWeight: 900, color }}>{value.toLocaleString()}{suffix}</div>
-            <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: "1px" }}>{label}</div>
+          <div key={label} style={{ flex: 1, padding: "clamp(6px,2vw,8px) clamp(4px,2vw,12px)", background: "#171d22", textAlign: "center", minWidth: 0 }}>
+            <div style={{ fontSize: "clamp(13px,3.5vw,16px)", fontWeight: 900, color, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value.toLocaleString()}{suffix}</div>
+            <div style={{ fontSize: "clamp(8px,2vw,10px)", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: "1px" }}>{label}</div>
           </div>
         ))}
       </div>
@@ -732,10 +732,10 @@ export default function CashierScreen() {
           {/* Queue Tab */}
           {tab === "queue" && (
             <motion.div key="queue" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
-              style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+              style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
 
-              {/* Queue list */}
-              <div style={{ width: selected ? "45%" : "100%", borderRight: selected ? "1px solid #2d3840" : "none", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.3s ease" }}>
+              {/* Queue list — always full-width */}
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
                 {/* Header */}
                 <div style={{ padding: "12px 16px", borderBottom: "1px solid #2d3840", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
@@ -792,11 +792,21 @@ export default function CashierScreen() {
                 )}
               </div>
 
-              {/* Action panel */}
+              {/* Action panel — full-screen overlay on mobile */}
               <AnimatePresence>
                 {selected && (
-                  <motion.div initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 16 }} transition={{ duration: 0.22, ease: "easeOut" }}
-                    style={{ flex: 1, overflowY: "auto", padding: "20px 16px" }}>
+                  <motion.div
+                    initial={{ opacity: 0, y: 24 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 24 }}
+                    transition={{ duration: 0.22, ease: "easeOut" }}
+                    style={{
+                      position: "absolute", inset: 0,
+                      background: "#0f1317",
+                      overflowY: "auto",
+                      padding: "clamp(12px,4vw,20px) clamp(12px,4vw,16px)",
+                      zIndex: 10,
+                    }}>
                     <ActionPanel
                       entry={selected}
                       barberOptions={barberOptions}

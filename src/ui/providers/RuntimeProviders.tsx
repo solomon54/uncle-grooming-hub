@@ -19,8 +19,8 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { runtime }     from "@/core/runtime/runtime";
-import { syncEngine }  from "@/core/sync/sync.engine";
+import { runtime } from "@/core/runtime/runtime";
+import { syncEngine } from "@/core/sync/sync.engine";
 import { getDatabase } from "@/core/db/database";
 
 // ─── Boot States ──────────────────────────────────────────────────────────────
@@ -34,12 +34,12 @@ type BootPhase =
   | "error";
 
 const PHASE_LABELS: Record<BootPhase, string> = {
-  idle:    "Starting…",
-  db:      "Opening local journal…",
+  idle: "Starting…",
+  db: "Opening local journal…",
   runtime: "Initializing runtime…",
-  replay:  "Reconstituting state…",
-  ready:   "Ready",
-  error:   "Boot failed",
+  replay: "Reconstituting state…",
+  ready: "Ready",
+  error: "Boot failed",
 };
 
 // ─── Loading Screen ───────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ function BootScreen({ phase }: { phase: BootPhase }) {
       {/* Logo mark */}
       <div className="flex flex-col items-center gap-2">
         <div className="w-12 h-12 rounded-lg bg-surface-raised border border-surface-border flex items-center justify-center">
-          <span className="text-xl font-bold text-gold-base">U</span>
+          <span className="text-xl font-bold text-gold-base">D</span>
         </div>
         <span className="text-xs font-semibold uppercase tracking-widest text-text-tertiary">
           Dove Barber

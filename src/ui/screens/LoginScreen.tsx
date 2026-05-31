@@ -21,18 +21,18 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter }               from "next/navigation";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { sessionService }          from "@/core/session/session.service";
+import { sessionService } from "@/core/session/session.service";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PIN_LENGTH = 6;
 
 const ROLE_REDIRECT: Record<string, string> = {
-  CASHIER:      "/cashier",
-  BARBER:       "/barber/lane_001", // fallback — overridden below when barber_id is known
-  ADMIN:        "/admin",
+  CASHIER: "/cashier",
+  BARBER: "/barber/lane_001", // fallback — overridden below when barber_id is known
+  ADMIN: "/admin",
   SYSTEM_OWNER: "/admin",
 };
 
@@ -44,9 +44,9 @@ function PinBox({
   filled: boolean; active: boolean; error: boolean; success: boolean;
 }) {
   const border = error ? "#ef4444" : success ? "#e2d609" : active ? "#e2d609" : filled ? "#3a4650" : "#2d3840";
-  const glow   = error ? "0 0 0 3px rgba(239,68,68,0.15)"
+  const glow = error ? "0 0 0 3px rgba(239,68,68,0.15)"
     : (success || active) ? "0 0 0 3px rgba(226,214,9,0.15)" : "none";
-  const bg     = success ? "rgba(226,214,9,0.12)" : filled ? "#252f38" : "#1e262d";
+  const bg = success ? "rgba(226,214,9,0.12)" : filled ? "#252f38" : "#1e262d";
 
   return (
     <div style={{
@@ -139,14 +139,14 @@ function NumKey({
 export default function LoginScreen() {
   const router = useRouter();
 
-  const [step,      setStep]      = useState<"email" | "pin">("email");
-  const [email,     setEmail]     = useState("");
-  const [pin,       setPin]       = useState("");
-  const [status,    setStatus]    = useState<"idle" | "error" | "success">("idle");
-  const [errorMsg,  setErrorMsg]  = useState("");
-  const [loading,   setLoading]   = useState(false);
-  const [shake,     setShake]     = useState(false);
-  const [isMobile,  setIsMobile]  = useState(false);
+  const [step, setStep] = useState<"email" | "pin">("email");
+  const [email, setEmail] = useState("");
+  const [pin, setPin] = useState("");
+  const [status, setStatus] = useState<"idle" | "error" | "success">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [shake, setShake] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   const emailRef = useRef<HTMLInputElement>(null);
 
@@ -213,7 +213,7 @@ export default function LoginScreen() {
     if (pin.length === PIN_LENGTH && status === "idle" && step === "pin") {
       void submit();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pin]);
 
   // ── Email step submit ───────────────────────────────────────────────────────
@@ -271,9 +271,9 @@ export default function LoginScreen() {
 
   // ── Numpad rows ─────────────────────────────────────────────────────────────
   const ROWS = [
-    [["1",""],["2","ABC"],["3","DEF"]],
-    [["4","GHI"],["5","JKL"],["6","MNO"]],
-    [["7","PQR"],["8","STU"],["9","VWX"]],
+    [["1", ""], ["2", "ABC"], ["3", "DEF"]],
+    [["4", "GHI"], ["5", "JKL"], ["6", "MNO"]],
+    [["7", "PQR"], ["8", "STU"], ["9", "VWX"]],
   ] as const;
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -308,7 +308,7 @@ export default function LoginScreen() {
             color: "#0f1317",
             fontSize: "clamp(16px, 4vw, 22px)",
             fontWeight: 900,
-          }}>U</span>
+          }}>D</span>
         </div>
         <h1 style={{
           fontSize: "clamp(16px, 4vw, 22px)",
@@ -595,9 +595,9 @@ export default function LoginScreen() {
               }}>
                 {status === "success" ? "✓ Verified — entering…"
                   : loading ? "Verifying…"
-                  : pin.length < PIN_LENGTH
-                  ? `${PIN_LENGTH - pin.length} digit${PIN_LENGTH - pin.length !== 1 ? "s" : ""} remaining`
-                  : ""}
+                    : pin.length < PIN_LENGTH
+                      ? `${PIN_LENGTH - pin.length} digit${PIN_LENGTH - pin.length !== 1 ? "s" : ""} remaining`
+                      : ""}
               </p>
             </motion.div>
           )}

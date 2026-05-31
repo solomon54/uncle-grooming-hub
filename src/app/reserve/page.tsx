@@ -13,17 +13,17 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { motion, AnimatePresence }     from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 // ─── Service catalogue (mirrors server-side validation) ───────────────────────
 
 const SERVICES = [
-  { id: "classic_cut", name: "Classic Cut",      price: 350, duration: 30, desc: "Precision cut, wash & style" },
-  { id: "premium_cut", name: "Premium Cut",       price: 500, duration: 45, desc: "Premium cut with hot towel finish" },
-  { id: "beard_groom", name: "Beard Grooming",    price: 250, duration: 20, desc: "Shape, trim & condition" },
-  { id: "cut_beard",   name: "Cut & Beard Combo", price: 700, duration: 60, desc: "Full cut + beard grooming" },
-  { id: "head_shave",  name: "Head Shave",        price: 300, duration: 25, desc: "Clean head shave with hot towel" },
-  { id: "kids_cut",    name: "Kids Cut",          price: 200, duration: 20, desc: "For children under 12" },
+  { id: "classic_cut", name: "Classic Cut", price: 350, duration: 30, desc: "Precision cut, wash & style" },
+  { id: "premium_cut", name: "Premium Cut", price: 500, duration: 45, desc: "Premium cut with hot towel finish" },
+  { id: "beard_groom", name: "Beard Grooming", price: 250, duration: 20, desc: "Shape, trim & condition" },
+  { id: "cut_beard", name: "Cut & Beard Combo", price: 700, duration: 60, desc: "Full cut + beard grooming" },
+  { id: "head_shave", name: "Head Shave", price: 300, duration: 25, desc: "Clean head shave with hot towel" },
+  { id: "kids_cut", name: "Kids Cut", price: 200, duration: 20, desc: "For children under 12" },
 ] as const;
 
 type ServiceId = typeof SERVICES[number]["id"];
@@ -46,17 +46,17 @@ function validatePhone(p: string): string {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ReservePage() {
-  const [name,       setName]       = useState("");
-  const [phone,      setPhone]      = useState("");
-  const [barberId,   setBarberId]   = useState("");
-  const [date,       setDate]       = useState(todayISO());
-  const [time,       setTime]       = useState("09:00");
-  const [notes,      setNotes]      = useState("");
-  const [selected,   setSelected]   = useState<ServiceId[]>([]);
-  const [errors,     setErrors]     = useState<Record<string, string>>({});
-  const [loading,    setLoading]    = useState(false);
-  const [success,    setSuccess]    = useState(false);
-  const [barbers,    setBarbers]    = useState<BarberOption[]>([]);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [barberId, setBarberId] = useState("");
+  const [date, setDate] = useState(todayISO());
+  const [time, setTime] = useState("09:00");
+  const [notes, setNotes] = useState("");
+  const [selected, setSelected] = useState<ServiceId[]>([]);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [barbers, setBarbers] = useState<BarberOption[]>([]);
 
   // Load barbers from cloud
   useEffect(() => {
@@ -69,7 +69,7 @@ export default function ReservePage() {
             .map(o => ({ actor_id: o.actor_id, name: o.name, barber_id: o.barber_id! }))
         );
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // ── Service toggle ──────────────────────────────────────────────────────────
@@ -82,8 +82,8 @@ export default function ReservePage() {
   // ── Derived totals ──────────────────────────────────────────────────────────
 
   const selectedServices = SERVICES.filter(s => selected.includes(s.id));
-  const totalPrice       = selectedServices.reduce((sum, s) => sum + s.price, 0);
-  const totalDuration    = selectedServices.reduce((sum, s) => sum + s.duration, 0);
+  const totalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
+  const totalDuration = selectedServices.reduce((sum, s) => sum + s.duration, 0);
 
   // ── Validation ──────────────────────────────────────────────────────────────
 
@@ -111,13 +111,13 @@ export default function ReservePage() {
       const resp = await fetch("/api/reserve", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name:                name.trim(),
-          phone:               phone.replace(/\s/g, ""),
-          services:            selected,
+          name: name.trim(),
+          phone: phone.replace(/\s/g, ""),
+          services: selected,
           preferred_barber_id: barberId || undefined,
-          requested_date:      date,
-          requested_time:      time,
-          notes:               notes.trim() || undefined,
+          requested_date: date,
+          requested_time: time,
+          notes: notes.trim() || undefined,
         }),
       });
       if (!resp.ok) {
@@ -152,17 +152,17 @@ export default function ReservePage() {
     <div style={{ minHeight: "100dvh", background: "#0f1317", display: "flex", flexDirection: "column", alignItems: "center", padding: "clamp(16px,4vw,32px) clamp(12px,4vw,24px)" }}>
 
       {/* Brand */}
-      <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: [0.16,1,0.3,1] }}
+      <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
         style={{ textAlign: "center", margin: "clamp(16px,4vw,32px) 0 clamp(20px,4vw,28px)" }}>
         <div style={{ width: "52px", height: "52px", borderRadius: "14px", background: "#e2d609", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", boxShadow: "0 0 32px rgba(226,214,9,0.25)" }}>
-          <span style={{ color: "#0f1317", fontSize: "22px", fontWeight: 900 }}>U</span>
+          <span style={{ color: "#0f1317", fontSize: "22px", fontWeight: 900 }}>D</span>
         </div>
         <h1 style={{ fontSize: "clamp(18px,4vw,24px)", fontWeight: 900, color: "#f5f5f5", margin: 0 }}>Dove Barber</h1>
         <p style={{ fontSize: "13px", color: "rgba(255,255,255,0.35)", marginTop: "4px" }}>Reserve your spot</p>
       </motion.div>
 
       {/* Card */}
-      <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1, ease: [0.16,1,0.3,1] }}
+      <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
         style={{ width: "100%", maxWidth: "480px", background: "#171d22", border: "1px solid #2d3840", borderRadius: "20px", overflow: "hidden", marginBottom: "32px" }}>
 
         <AnimatePresence mode="wait">

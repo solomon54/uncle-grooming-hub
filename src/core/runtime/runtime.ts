@@ -18,17 +18,17 @@
  * Write path: emit() → journalService.commitEvent() → projectionEngine.apply()
  */
 
-import type { RxDatabase }       from "rxdb";
-import { journalService }        from "@/core/journal/journal.service";
-import { projectionEngine }      from "@/core/projection/projection.engine";
-import { terminalIdentity }      from "@/core/terminal/terminal.identity";
-import { clockService }          from "@/core/clock/clock.service";
-import { sessionService }        from "@/core/session/session.service";
-import { syncEngine }            from "@/core/sync/sync.engine";
-import type { AllEvents }        from "@/domain/events/event.definitions";
-import type { ActiveSession }    from "@/core/session/session.types";
-import type { CommitResult }     from "@/core/journal/journal.service";
-import type { QueueBoardView }   from "@/projections/queue-board.view";
+import type { RxDatabase } from "rxdb";
+import { journalService } from "@/core/journal/journal.service";
+import { projectionEngine } from "@/core/projection/projection.engine";
+import { terminalIdentity } from "@/core/terminal/terminal.identity";
+import { clockService } from "@/core/clock/clock.service";
+import { sessionService } from "@/core/session/session.service";
+import { syncEngine } from "@/core/sync/sync.engine";
+import type { AllEvents } from "@/domain/events/event.definitions";
+import type { ActiveSession } from "@/core/session/session.types";
+import type { CommitResult } from "@/core/journal/journal.service";
+import type { QueueBoardView } from "@/projections/queue-board.view";
 
 // ─── Runtime ──────────────────────────────────────────────────────────────────
 
