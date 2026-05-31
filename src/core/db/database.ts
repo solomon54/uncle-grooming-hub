@@ -55,7 +55,7 @@ export async function getDatabase(): Promise<RxDatabase> {
       const db = await createRxDatabase({
         name:            "ugh_local_journal_v2",  // bumped — clears old schema conflicts
         storage,
-        ignoreDuplicate: true,
+        ignoreDuplicate: isDev,
       });
 
       // ── Import all schemas ──────────────────────────────────────────────────

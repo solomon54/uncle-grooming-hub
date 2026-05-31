@@ -149,9 +149,9 @@ export function RuntimeProvider({ children }: { children: React.ReactNode }) {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
 
-      // RxDB DB9 = schema conflict with existing IndexedDB.
+      // RxDB DB6 = schema conflict with existing IndexedDB.
       // Clear all RxDB databases and retry once with a fresh store.
-      if (message.includes("DB9") || message.includes("schema")) {
+      if (message.includes("DB6") || message.includes("schema")) {
         console.warn("[RuntimeProvider] Schema conflict detected — clearing local DB and retrying…");
         try {
           // Delete all IndexedDB databases that match our naming pattern
